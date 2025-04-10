@@ -42,9 +42,9 @@ def main():
     ]
 
     lengths = {
-        "short": 30,
-        "medium": 100,
-        "long": 250
+        "short": 128,
+        "medium": 512,
+        "long": 1024
     }
 
     BATCH_SIZE = 4
@@ -67,10 +67,11 @@ def main():
                         batch = data[i:i+BATCH_SIZE]
                         prompts = [build_prompt(s, dataset_name, max_len) for s in batch]
 
-                        print(f"\n🚀 Running: {model_name} | {dataset_name} | {length_label} | Batch #{i//BATCH_SIZE + 1}")
+                        print(f"\n Running: {model_name} | {dataset_name} | {length_label} | Batch #{i//BATCH_SIZE + 1}")
 
                         try:
                             torch.cuda.empty_cache()
+                            torch.cuda.reset_peak_memory_stats()
                             proc, file = start_power_monitor()
 
                             device = next(model.parameters()).device
@@ -82,7 +83,10 @@ def main():
                             end = time.time()
 
                             latency = end - start
-                            memory = torch.cuda.memory_allocated() / 1e6  # MB
+                            torch.cuda.synchronize()
+                            memory = torch.cuda.max_memory_allocated() / 1e6  # MB
+                            #torch.cuda.reset_peak_memory_stats()
+
 
                             stop_power_monitor(proc, file)
                             energy, avg_power = parse_power_log()
