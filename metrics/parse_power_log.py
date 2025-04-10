@@ -2,21 +2,26 @@ import pandas as pd
 
 def parse_power_log(filename="logs/gpu_power_log.csv"):
     try:
-        df = pd.read_csv(filename, header=None, names=["timestamp", "utilization", "memory"], on_bad_lines='skip')
+        # Load power.draw too
+        df = pd.read_csv(filename, skiprows=1, names=["timestamp", "power", "utilization", "memory"], on_bad_lines='skip')
 
-        # Clean numeric columns
-        df["utilization"] = df["utilization"].str.extract(r'(\d+)').astype(float)
-        df["memory"] = df["memory"].str.extract(r'(\d+)').astype(float)
+        # Extract numeric values from the strings
+        df["power"] = df["power"].str.extract(r"([\d.]+)").astype(float)
+        df["utilization"] = df["utilization"].str.extract(r"(\d+)").astype(float)
+        df["memory"] = df["memory"].str.extract(r"(\d+)").astype(float)
 
-        # We treat utilization percentage as proxy for activity
-        avg_utilization = df["utilization"].mean()
-        max_memory = df["memory"].max()
+        # Drop any rows with NaN values to avoid corrupt measurements
+        df.dropna(inplace=True)
 
-        # No energy (Joules) can be calculated from utilization
-        energy = None
+        # Average power
+        avg_power = df["power"].mean()
 
-        return energy, avg_utilization
+        # Estimate energy in Joules: sum of power (in watts) × time interval (in seconds)
+        # Since interval is 1s per your monitor config, this is just the sum of power readings
+        energy_joules = df["power"].sum()
+
+        return round(energy_joules, 2), round(avg_power, 1)
 
     except Exception as e:
-        print(f"Failed to parse GPU power log: {e}")
+        print(f"❌ Failed to parse GPU power log: {e}")
         return None, None
