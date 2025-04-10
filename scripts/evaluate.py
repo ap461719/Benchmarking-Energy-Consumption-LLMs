@@ -9,7 +9,6 @@ from metrics.parse_power_log import parse_power_log
 import torch
 import time
 import csv
-import os
 
 
 def build_prompt(sample, dataset_name, max_len):
@@ -38,8 +37,8 @@ def main():
 
     models = [
         "meta-llama/Llama-2-7b-hf",
-        "meta-llama/Llama-2-13b-hf",
-        "meta-llama/Llama-2-65b-hf"
+        #"meta-llama/Llama-2-13b-hf",
+        #"meta-llama/Llama-2-65b-hf"
     ]
 
     lengths = {
@@ -48,32 +47,34 @@ def main():
         "long": 250
     }
 
+    BATCH_SIZE = 4
+
     with open("results/metrics_output.csv", "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["Model", "Dataset", "Length", "Latency_sec", "Memory_MB", "Energy_J", "Avg_Power_W"])
 
         for model_name in models:
-            print(f"\n📦 Loading model: {model_name}")
+            print(f"\n Loading model: {model_name}")
             try:
                 model, tokenizer = load_llama(model_name)
             except Exception as e:
-                print(f"❌ Failed to load {model_name}: {e}")
+                print(f" Failed to load {model_name}: {e}")
                 continue
 
             for dataset_name, data in datasets.items():
                 for length_label, max_len in lengths.items():
-                    for i, sample in enumerate(data[:2]):  # Small sample run
-                        prompt = build_prompt(sample, dataset_name, max_len)
+                    for i in range(0, len(data[:8]), BATCH_SIZE):  # Small batch run
+                        batch = data[i:i+BATCH_SIZE]
+                        prompts = [build_prompt(s, dataset_name, max_len) for s in batch]
 
-                        print(f"\n🚀 Running: {model_name} | {dataset_name} | {length_label} | Sample #{i+1}")
+                        print(f"\n🚀 Running: {model_name} | {dataset_name} | {length_label} | Batch #{i//BATCH_SIZE + 1}")
 
                         try:
                             torch.cuda.empty_cache()
                             proc, file = start_power_monitor()
 
-                            device = next(model.parameters()).device  # dynamically get model's device
-                            inputs = tokenizer(prompt, return_tensors="pt").to(device)
-
+                            device = next(model.parameters()).device
+                            inputs = tokenizer(prompts, return_tensors="pt", padding=True, truncation=True).to(device)
 
                             start = time.time()
                             with torch.no_grad():
@@ -86,7 +87,6 @@ def main():
                             stop_power_monitor(proc, file)
                             energy, avg_power = parse_power_log()
 
-                            #writer.writerow([model_name, dataset_name, length_label, latency, memory, energy, avg_power])
                             writer.writerow([
                                 model_name,
                                 dataset_name,
@@ -97,8 +97,7 @@ def main():
                                 avg_power
                             ])
 
-                            print(f"✅ Done | Latency: {latency:.2f}s | Mem: {memory:.0f}MB | GPU Utilization: {avg_power:.1f}%")
-
+                            print(f" Done | Latency: {latency:.2f}s | Mem: {memory:.0f}MB | GPU Utilization: {avg_power:.1f}%")
 
                         except Exception as e:
                             print(f"⚠️ Skipped due to error: {e}")

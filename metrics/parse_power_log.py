@@ -18,5 +18,5 @@ def parse_power_log(filename="logs/gpu_power_log.csv"):
         return energy, avg_utilization
 
     except Exception as e:
-        print(f"⚠️ Failed to parse GPU power log: {e}")
+        print(f"Failed to parse GPU power log: {e}")
         return None, None
