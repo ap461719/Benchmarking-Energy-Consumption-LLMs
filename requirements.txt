@@ -1,0 +1,9 @@
+torch==2.1.0
+transformers==4.36.2
+datasets
+accelerate
+tqdm
+pandas
+matplotlib
+seaborn
+scipy
