@@ -6,7 +6,7 @@ def start_power_monitor(filename="logs/gpu_power_log.csv", interval=1):
 
     cmd = [
         "nvidia-smi",
-        "--query-gpu=timestamp,utilization.gpu,memory.used",
+        "--query-gpu=timestamp,power.draw,utilization.gpu,memory.used",
         "--format=csv",
         "-l", str(interval)
     ]
