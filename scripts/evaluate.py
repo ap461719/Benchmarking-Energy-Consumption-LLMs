@@ -5,6 +5,7 @@ from models.load_llama import load_llama
 from data_utils.load_data import load_alpaca, load_gsm8k
 from metrics.monitor_gpu import start_power_monitor, stop_power_monitor
 from metrics.parse_power_log import parse_power_log
+from metrics.zeusml import ZeusMLMonitor
 
 import torch
 import time
@@ -47,6 +48,8 @@ def main():
 
     BATCH_SIZE = 4
 
+    zeus_monitor = ZeusMLMonitor(verbose=False, save_csv="results/zeusml_output.csv")
+
     with open("results/metrics_output.csv", "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["Model", "Dataset", "Length", "Latency_sec", "Memory_MB", "Energy_J", "Avg_Power_W"])
@@ -77,12 +80,14 @@ def main():
                             torch.cuda.empty_cache()
                             torch.cuda.reset_peak_memory_stats()
                             proc, file = start_power_monitor()  # No longer passing 'metric'
+                            zeus_monitor.start() # Start ZeusML monitoring
 
                             device = next(model.parameters()).device
                             prompts = [p for p in prompts if p.strip() != ""]
                             if not prompts:
                                 print("⚠️ Skipping empty prompt batch")
                                 stop_power_monitor(proc, file)
+                                zeus_monitor.stop()
                                 continue
 
                             inputs = tokenizer(
@@ -96,6 +101,7 @@ def main():
                             if torch.isnan(inputs["input_ids"]).any() or torch.isinf(inputs["input_ids"]).any():
                                 print(f"⚠️ Skipping batch #{i//BATCH_SIZE + 1} due to NaNs or infs in input_ids")
                                 stop_power_monitor(proc, file)
+                                zeus_monitor.stop()
                                 continue
 
                             gen_tokens = max_len
@@ -112,6 +118,7 @@ def main():
                             memory = torch.cuda.max_memory_allocated() / 1e6  # MB
 
                             stop_power_monitor(proc, file)
+                            zeus_monitor.stop()
                             energy, avg_power = parse_power_log()
 
                             writer.writerow([
