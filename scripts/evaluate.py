@@ -78,7 +78,7 @@ def main():
                         prompts = [build_prompt(s, dataset_name, prompt_len) for s in batch]
 
                         if not any(prompts):
-                            print("⚠️ Empty prompt batch. Skipping.")
+                            print("Empty prompt batch. Skipping.")
                             continue
 
                         print(f"\nRunning: {model_name} | {dataset_name} | {length_label} | Batch #{i//BATCH_SIZE + 1}")
@@ -101,8 +101,12 @@ def main():
                             if torch.isnan(inputs["input_ids"]).any() or torch.isinf(inputs["input_ids"]).any():
                                 print("Skipping batch with NaNs or Infs")
                                 continue
+                            
+                            input_len = inputs["input_ids"].shape[1]
+                            max_gen_tokens = max_context_len - input_len
+                            gen_tokens = min(max_gen_tokens, 256)
 
-                            gen_tokens = min(512, max_context_len - inputs["input_ids"].shape[1])
+                            #gen_tokens = min(512, max_context_len - inputs["input_ids"].shape[1])
 
                             start = time.time()
                             with torch.no_grad():
