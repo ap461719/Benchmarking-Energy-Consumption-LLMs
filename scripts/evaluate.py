@@ -1,14 +1,14 @@
 import sys
 import os
+import time
+import csv
+import torch
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from models.load_llama import load_llama
 from data_utils.load_data import load_alpaca, load_gsm8k
 from zeus.monitor import ZeusMonitor
 
-
-import torch
-import time
-import csv
 
 def build_prompt(sample, dataset_name, max_len):
     if dataset_name == "alpaca":
@@ -21,6 +21,7 @@ def build_prompt(sample, dataset_name, max_len):
         prompt = ""
     return prompt[:max_len]
 
+
 def main():
     os.makedirs("results", exist_ok=True)
     os.makedirs("logs", exist_ok=True)
@@ -30,11 +31,10 @@ def main():
         "gsm8k": load_gsm8k(n_samples=100)
     }
 
-    models = [
-        "meta-llama/Llama-2-7b-hf",
-        # "meta-llama/Llama-2-13b-hf",
-        # "meta-llama/Llama-2-65b-hf"
-    ]
+    models = {
+        "meta-llama/Llama-2-7b-hf": 2048,
+        #"meta-llama/Llama-2-13b-hf": 2048  # Both 7B and 13B have 2k context window by default
+    }
 
     lengths = {
         "short": 128,
@@ -46,91 +46,109 @@ def main():
 
     zeus_monitor = ZeusMonitor(
         approx_instant_energy=True,
-        gpu_indices=[torch.cuda.current_device()],
-        #record_power_trace=True
+        gpu_indices=[torch.cuda.current_device()]
     )
 
     with open("results/metrics_output.csv", "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["Model", "Dataset", "Length", "Latency_sec", "Memory_MB", "Energy_J", "Avg_Power_W"])
+        writer.writerow([
+            "Model", "Context_Window", "Dataset", "Prompt_Length", "Latency_sec",
+            "Memory_MB", "Energy_J", "Avg_Power_W", "Energy_per_InputToken",
+            "Energy_per_OutputToken"
+        ])
 
-        for model_name in models:
-            print(f"\n🔧 Loading model: {model_name}")
+        for model_name, max_context_len in models.items():
+            print(f"\nLoading model: {model_name}")
             try:
                 model, tokenizer = load_llama(model_name)
             except Exception as e:
-                print(f"❌ Failed to load {model_name}: {e}")
+                print(f"Failed to load {model_name}: {e}")
                 continue
 
+            print(f"➡️ Model Context Window: {max_context_len} tokens")
+
             for dataset_name, data in datasets.items():
-                for length_label, max_len in lengths.items():
+                for length_label, prompt_len in lengths.items():
+                    if prompt_len > max_context_len:
+                        print(f"Skipping {length_label} ({prompt_len} tokens) — exceeds context window.")
+                        continue
+
                     for i in range(0, len(data[:8]), BATCH_SIZE):
                         batch = data[i:i+BATCH_SIZE]
-                        prompts = [build_prompt(s, dataset_name, max_len) for s in batch]
+                        prompts = [build_prompt(s, dataset_name, prompt_len) for s in batch]
 
-                        if dataset_name == "gsm8k" and length_label in ["short", "medium"]:
-                            print("\n📝 Prompt batch preview (gsm8k -", length_label, ")")
-                            for j, p in enumerate(prompts):
-                                print(f"  Prompt {i + j + 1}: {repr(p[:200])}...")
+                        if not any(prompts):
+                            print("⚠️ Empty prompt batch. Skipping.")
+                            continue
 
-                        print(f"\n🚀 Running: {model_name} | {dataset_name} | {length_label} | Batch #{i//BATCH_SIZE + 1}")
+                        print(f"\nRunning: {model_name} | {dataset_name} | {length_label} | Batch #{i//BATCH_SIZE + 1}")
 
                         try:
                             torch.cuda.empty_cache()
                             torch.cuda.reset_peak_memory_stats()
 
-                            prompts = [p for p in prompts if p.strip()]
-                            if not prompts:
-                                print("⚠️ Skipping empty prompt batch")
-                                continue
-
-                            zeus_monitor.begin_window("inference")
                             device = next(model.parameters()).device
+                            zeus_monitor.begin_window("inference")
+
                             inputs = tokenizer(
                                 prompts,
                                 return_tensors="pt",
                                 padding=True,
                                 truncation=True,
-                                max_length=2048
+                                max_length=max_context_len
                             ).to(device)
 
                             if torch.isnan(inputs["input_ids"]).any() or torch.isinf(inputs["input_ids"]).any():
-                                print(f"⚠️ Skipping batch #{i//BATCH_SIZE + 1} due to NaNs/infs in input_ids")
+                                print("Skipping batch with NaNs or Infs")
                                 continue
 
-                            gen_tokens = 256 if dataset_name == "gsm8k" and length_label == "long" else max_len
+                            gen_tokens = min(512, max_context_len - inputs["input_ids"].shape[1])
 
                             start = time.time()
                             with torch.no_grad():
                                 output = model.generate(**inputs, max_new_tokens=gen_tokens)
+                                # Determine how many input tokens are used (excluding padding)
+                                pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+                                num_input_tokens = (inputs["input_ids"] != pad_token_id).sum().item()
+                                num_output_tokens = sum(len(seq) - inputs["input_ids"].shape[1] for seq in output)
+                                print(f" Input tokens: {num_input_tokens} | Output tokens: {num_output_tokens}")
                             end = time.time()
+
                             measurement = zeus_monitor.end_window("inference")
 
                             latency = end - start
                             torch.cuda.synchronize()
-                            memory = torch.cuda.max_memory_allocated() / 1e6  # MB
-
+                            memory = torch.cuda.max_memory_allocated() / 1e6  # Convert to MB
                             energy = round(measurement.total_energy, 2)
+
                             power_data = getattr(measurement, "power_data", [])
-                            power_values = [point["power"] for point in power_data if "power" in point]
+                            power_values = [p["power"] for p in power_data if "power" in p]
                             avg_power = round(sum(power_values) / len(power_values), 1) if power_values else 0.0
-                            
+
+                            input_token_count = inputs["input_ids"].numel()
+                            output_token_count = gen_tokens * len(prompts)
+
+                            energy_per_input = round(energy / input_token_count, 4) if input_token_count > 0 else 0.0
+                            energy_per_output = round(energy / output_token_count, 4) if output_token_count > 0 else 0.0
 
                             writer.writerow([
-                                model_name,
-                                dataset_name,
-                                length_label,
-                                latency,
-                                memory,
-                                energy,
-                                avg_power
+                                model_name, max_context_len, dataset_name, prompt_len,
+                                latency, memory, energy, avg_power,
+                                energy_per_input, energy_per_output
                             ])
 
-                            print(f"✅ Done | Latency: {latency:.2f}s | Mem: {memory:.0f}MB | Power: {avg_power:.1f}W | Energy: {energy}J")
+                            print(f"Done | Latency: {latency:.2f}s | Mem: {memory:.0f}MB | "
+                                  f"Power: {avg_power:.1f}W | Energy: {energy}J | "
+                                  f"Per-Token Energy (in/out): {energy_per_input}/{energy_per_output} J")
 
                         except Exception as e:
-                            print(f"⚠️ Skipped due to error: {e}")
+                            print(f"⚠️ Error during batch: {e}")
+                            try:
+                                zeus_monitor.end_window("inference")
+                            except:
+                                pass
                             continue
+
 
 if __name__ == "__main__":
     main()
