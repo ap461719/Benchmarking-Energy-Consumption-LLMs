@@ -78,6 +78,18 @@ def define_test_suites():
         }
     ]
 
+# def define_test_suites():
+#     return [
+#         {
+#             "suite_name": "suite3",
+#             "batch_size": 4,
+#             "model": "meta-llama/Llama-2-7b-hf",
+#             "dataset": "alpaca",
+#             "input_length": "short",
+#             "output_length": "long"
+#         },
+#     ]
+
 
 def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data, length_label, prompt_len, gen_tokens, batch_size, writer):
     device = next(model.parameters()).device
@@ -99,12 +111,13 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
         inputs = tokenizer(
             prompts,
             return_tensors="pt",
-            padding=True,
+            padding='max_length',
             truncation=True,
             max_length=prompt_len
         ).to(device)
-
         input_token_lens = [len(seq) for seq in inputs["input_ids"]]
+        print("input token lengths: ", input_token_lens)
+
         if any(in_len + gen_tokens >= context_len - 10 for in_len in input_token_lens):
             continue
 
@@ -112,10 +125,10 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
             torch.isinf(inputs["input_ids"]).any() or
             (inputs["input_ids"] < 0).any()):
             continue
-
+        print("max new tokens argument: ", gen_tokens)
         start = time.time()
         with torch.no_grad():
-            output = model.generate(**inputs, max_new_tokens=gen_tokens)
+            output = model.generate(**inputs, max_new_tokens=gen_tokens, min_new_tokens=gen_tokens)
         end = time.time()
 
         measurement = zeus_monitor.end_window("inference")
@@ -136,6 +149,9 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
 
         energy_per_input = round(energy / num_input_tokens, 4) if num_input_tokens > 0 else 0.0
         energy_per_output = round(energy / num_output_tokens, 4) if num_output_tokens > 0 else 0.0
+
+        input_token_counts = (inputs["input_ids"] != pad_token_id).sum(dim=1).tolist()
+        print("Before Padding input token counts:", input_token_counts)
 
         writer.writerow([
             model_name, context_len, dataset_name, prompt_len, gen_tokens,
