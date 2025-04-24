@@ -1,0 +1,5 @@
+Model,Context_Window,Dataset,Prompt_Length,Output_Length,Latency_sec,Memory_MB,Energy_J,Avg_Power_W,Input_Tokens,Output_Tokens,Energy_per_InputToken,Energy_per_OutputToken
+meta-llama/Llama-2-7b-hf,2048,gsm8k,512,512,37.75915718078613,14576.041984,2703.26,0.0,81,1024,33.3736,2.6399
+meta-llama/Llama-2-7b-hf,2048,gsm8k,512,512,37.5968816280365,14576.058368,2702.99,0.0,123,1024,21.9755,2.6396
+meta-llama/Llama-2-7b-hf,2048,gsm8k,512,512,37.69463014602661,14576.058368,2716.76,0.0,96,1024,28.2996,2.6531
+meta-llama/Llama-2-7b-hf,2048,gsm8k,512,512,37.71419835090637,14576.058368,2709.32,0.0,180,1024,15.0518,2.6458

@@ -1,0 +1,3 @@
+Model,Context_Window,Dataset,Prompt_Length,Output_Length,Latency_sec,Memory_MB,Energy_J,Avg_Power_W,Input_Tokens,Output_Tokens,Energy_per_InputToken,Energy_per_OutputToken
+meta-llama/Llama-2-7b-hf,2048,alpaca,128,1024,82.20285654067993,15940.849664,5889.72,0.0,36,4096,163.6033,1.4379
+meta-llama/Llama-2-7b-hf,2048,alpaca,128,1024,82.66579556465149,15940.886528,5941.25,0.0,71,4096,83.6796,1.4505
