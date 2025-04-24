@@ -10,7 +10,7 @@ from data_utils.load_data import load_alpaca, load_gsm8k
 from zeus.monitor import ZeusMonitor
 
 
-def build_prompt(sample, dataset_name, max_len):
+def build_prompt(sample, dataset_name):
     if dataset_name == "alpaca":
         prompt = sample["instruction"]
         if sample.get("input"):
@@ -19,7 +19,7 @@ def build_prompt(sample, dataset_name, max_len):
         prompt = sample["question"]
     else:
         prompt = ""
-    return prompt[:max_len]
+    return prompt
 
 
 def main():
@@ -33,13 +33,19 @@ def main():
 
     models = {
         "meta-llama/Llama-2-7b-hf": 2048,
-        #"meta-llama/Llama-2-13b-hf": 2048  # Both 7B and 13B have 2k context window by default
     }
 
-    lengths = {
+    # Define input lengths (max prompt tokens) and matching output lengths
+    input_lengths = {
         "short": 128,
         "medium": 512,
         "long": 1024
+    }
+
+    output_lengths = {
+        "short": 128,
+        "medium": 256,
+        "long": 512
     }
 
     BATCH_SIZE = 4
@@ -52,9 +58,9 @@ def main():
     with open("results/metrics_output.csv", "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
-            "Model", "Context_Window", "Dataset", "Prompt_Length", "Latency_sec",
-            "Memory_MB", "Energy_J", "Avg_Power_W", "Energy_per_InputToken",
-            "Energy_per_OutputToken"
+            "Model", "Context_Window", "Dataset", "Prompt_Length", "Output_Length",
+            "Latency_sec", "Memory_MB", "Energy_J", "Avg_Power_W",
+            "Input_Tokens", "Output_Tokens", "Energy_per_InputToken", "Energy_per_OutputToken"
         ])
 
         for model_name, max_context_len in models.items():
@@ -68,14 +74,17 @@ def main():
             print(f"➡️ Model Context Window: {max_context_len} tokens")
 
             for dataset_name, data in datasets.items():
-                for length_label, prompt_len in lengths.items():
-                    if prompt_len > max_context_len:
-                        print(f"Skipping {length_label} ({prompt_len} tokens) — exceeds context window.")
+                for length_label in input_lengths.keys():
+                    prompt_len = input_lengths[length_label]
+                    gen_tokens = output_lengths[length_label]
+
+                    if prompt_len + gen_tokens >= max_context_len - 10:  
+                        print(f"Skipping {length_label} — input + output exceeds context window.")
                         continue
 
                     for i in range(0, len(data[:8]), BATCH_SIZE):
                         batch = data[i:i+BATCH_SIZE]
-                        prompts = [build_prompt(s, dataset_name, prompt_len) for s in batch]
+                        prompts = [build_prompt(s, dataset_name) for s in batch]
 
                         if not any(prompts):
                             print("Empty prompt batch. Skipping.")
@@ -86,7 +95,6 @@ def main():
                         try:
                             torch.cuda.empty_cache()
                             torch.cuda.reset_peak_memory_stats()
-
                             device = next(model.parameters()).device
                             zeus_monitor.begin_window("inference")
 
@@ -95,58 +103,56 @@ def main():
                                 return_tensors="pt",
                                 padding=True,
                                 truncation=True,
-                                max_length=max_context_len
+                                max_length=prompt_len  
                             ).to(device)
 
                             if torch.isnan(inputs["input_ids"]).any() or torch.isinf(inputs["input_ids"]).any():
                                 print("Skipping batch with NaNs or Infs")
                                 continue
-                            
-                            input_len = inputs["input_ids"].shape[1]
-                            max_gen_tokens = max_context_len - input_len
-                            gen_tokens = min(max_gen_tokens, 256)
-
-                            #gen_tokens = min(512, max_context_len - inputs["input_ids"].shape[1])
 
                             start = time.time()
                             with torch.no_grad():
+                                print("Debug Info:")
+                                print(f"Prompt Length Label: {length_label}")
+                                print(f"Input shape: {inputs['input_ids'].shape}")
+                                print("Sample input_ids (first example):")
+                                print(inputs["input_ids"][0])
+                                print("Decoded prompt:")
+                                print(tokenizer.decode(inputs["input_ids"][0], skip_special_tokens=True))
                                 output = model.generate(**inputs, max_new_tokens=gen_tokens)
-                                # Determine how many input tokens are used (excluding padding)
-                                pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
-                                num_input_tokens = (inputs["input_ids"] != pad_token_id).sum().item()
-                                num_output_tokens = sum(len(seq) - inputs["input_ids"].shape[1] for seq in output)
-                                print(f" Input tokens: {num_input_tokens} | Output tokens: {num_output_tokens}")
                             end = time.time()
 
                             measurement = zeus_monitor.end_window("inference")
 
                             latency = end - start
                             torch.cuda.synchronize()
-                            memory = torch.cuda.max_memory_allocated() / 1e6  # Convert to MB
+                            memory = torch.cuda.max_memory_allocated() / 1e6
                             energy = round(measurement.total_energy, 2)
+
+                            pad_token_id = tokenizer.pad_token_id or tokenizer.eos_token_id
+                            num_input_tokens = (inputs["input_ids"] != pad_token_id).sum().item()
+                            num_output_tokens = sum(len(seq) - inputs["input_ids"].shape[1] for seq in output)
 
                             power_data = getattr(measurement, "power_data", [])
                             power_values = [p["power"] for p in power_data if "power" in p]
                             avg_power = round(sum(power_values) / len(power_values), 1) if power_values else 0.0
 
-                            input_token_count = inputs["input_ids"].numel()
-                            output_token_count = gen_tokens * len(prompts)
-
-                            energy_per_input = round(energy / input_token_count, 4) if input_token_count > 0 else 0.0
-                            energy_per_output = round(energy / output_token_count, 4) if output_token_count > 0 else 0.0
+                            energy_per_input = round(energy / num_input_tokens, 4) if num_input_tokens > 0 else 0.0
+                            energy_per_output = round(energy / num_output_tokens, 4) if num_output_tokens > 0 else 0.0
 
                             writer.writerow([
-                                model_name, max_context_len, dataset_name, prompt_len,
+                                model_name, max_context_len, dataset_name, prompt_len, gen_tokens,
                                 latency, memory, energy, avg_power,
+                                num_input_tokens, num_output_tokens,
                                 energy_per_input, energy_per_output
                             ])
 
+                            print(f" Input tokens: {num_input_tokens} | Output tokens: {num_output_tokens}")
                             print(f"Done | Latency: {latency:.2f}s | Mem: {memory:.0f}MB | "
-                                  f"Power: {avg_power:.1f}W | Energy: {energy}J | "
-                                  f"Per-Token Energy (in/out): {energy_per_input}/{energy_per_output} J")
+                                  f"Energy: {energy}J | Per-Token Energy (in/out): {energy_per_input}/{energy_per_output} J")
 
                         except Exception as e:
-                            print(f"⚠️ Error during batch: {e}")
+                            print(f"Error during batch: {e}")
                             try:
                                 zeus_monitor.end_window("inference")
                             except:

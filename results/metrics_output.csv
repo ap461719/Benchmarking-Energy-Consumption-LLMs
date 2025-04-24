@@ -1,2 +1,6 @@
-Model,Context_Window,Dataset,Prompt_Length,Latency_sec,Memory_MB,Energy_J,Avg_Power_W,Energy_per_InputToken,Energy_per_OutputToken
-meta-llama/Llama-2-7b-hf,2048,alpaca,128,35.818912506103516,14596.785664,2567.6,0.0,64.19,1.2537
+Model,Context_Window,Dataset,Prompt_Length,Output_Length,Latency_sec,Memory_MB,Energy_J,Avg_Power_W,Input_Tokens,Output_Tokens,Energy_per_InputToken,Energy_per_OutputToken
+meta-llama/Llama-2-7b-hf,2048,alpaca,128,128,14.223214387893677,13780.65664,797.06,0.0,36,512,22.1406,1.5568
+meta-llama/Llama-2-7b-hf,2048,alpaca,128,128,13.987742900848389,13808.9728,802.79,0.0,71,512,11.3069,1.5679
+meta-llama/Llama-2-7b-hf,2048,alpaca,512,256,28.16402578353882,14051.512832,1660.06,0.0,36,1024,46.1128,1.6212
+meta-llama/Llama-2-7b-hf,2048,alpaca,512,256,28.268208980560303,14079.207424,1708.97,0.0,71,1024,24.07,1.6689
+meta-llama/Llama-2-7b-hf,2048,alpaca,1024,512,57.945860862731934,14596.79488,3690.92,0.0,36,2048,102.5256,1.8022
