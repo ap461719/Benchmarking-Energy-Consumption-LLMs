@@ -79,10 +79,10 @@ def main():
                     gen_tokens = output_lengths[length_label]
 
                     #if prompt_len + gen_tokens >= max_context_len - 100:
-                    input_token_lens = [len(seq) for seq in inputs["input_ids"]]
-                    if any(in_len + gen_tokens >= max_context_len - 10 for in_len in input_token_lens):
-                        print(f"Skipping {length_label} — input + output exceeds context window.")
-                        continue
+                    # input_token_lens = [len(seq) for seq in inputs["input_ids"]]
+                    # if any(in_len + gen_tokens >= max_context_len - 10 for in_len in input_token_lens):
+                    #     print(f"Skipping {length_label} — input + output exceeds context window.")
+                    #     continue
 
                     for i in range(0, len(data[:8]), BATCH_SIZE):
                         batch = data[i:i+BATCH_SIZE]
@@ -108,9 +108,15 @@ def main():
                                 max_length=prompt_len  
                             ).to(device)
 
+                            input_token_lens = [len(seq) for seq in inputs["input_ids"]]
+                            if any(in_len + gen_tokens >= max_context_len - 10 for in_len in input_token_lens):
+                                print(f"Skipping {length_label} — input + output exceeds context window.")
+                                continue
+
                             if torch.isnan(inputs["input_ids"]).any() or torch.isinf(inputs["input_ids"]).any():
                                 print("Skipping batch: NaN or Inf in input_ids")
                                 continue
+
                             if (inputs["input_ids"] < 0).any():
                                 print("Skipping batch: Negative token ID found")
                                 continue
@@ -140,9 +146,9 @@ def main():
                             pad_token_id = tokenizer.pad_token_id or tokenizer.eos_token_id
                             num_input_tokens = (inputs["input_ids"] != pad_token_id).sum().item()
                             #num_output_tokens = sum(len(seq) - inputs["input_ids"].shape[1] for seq in output)
+                            input_lengths_batch = [len(x) for x in inputs["input_ids"]]
                             output_lengths_batch = [len(seq) - in_len for seq, in_len in zip(output, input_lengths_batch)]
                             num_output_tokens = sum(output_lengths_batch)
-                            input_lengths_batch = [len(x) for x in inputs["input_ids"]]
 
                             power_data = getattr(measurement, "power_data", [])
                             power_values = [p["power"] for p in power_data if "power" in p]
