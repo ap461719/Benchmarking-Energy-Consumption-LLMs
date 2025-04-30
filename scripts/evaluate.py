@@ -81,13 +81,13 @@ def define_test_suites():
 # def define_test_suites():
 #     return [
 #         {
-#             "suite_name": "suite3",
-#             "batch_size": 4,
+#             "suite_name": "suite6",
+#             "batch_size": 1,
 #             "model": "meta-llama/Llama-2-7b-hf",
 #             "dataset": "alpaca",
-#             "input_length": "short",
+#             "input_length": "long",
 #             "output_length": "long"
-#         },
+#         }
 #     ]
 
 
@@ -118,7 +118,11 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
         input_token_lens = [len(seq) for seq in inputs["input_ids"]]
         print("input token lengths: ", input_token_lens)
 
-        if any(in_len + gen_tokens >= context_len - 10 for in_len in input_token_lens):
+        if any(in_len + gen_tokens > context_len for in_len in input_token_lens):
+            print(f"Skipping batch {i//batch_size + 1} due to context length limit.")
+            print("max context length: ", context_len)
+            print("input token lengths: ", input_token_lens)
+            print("gen tokens: ", gen_tokens)
             continue
 
         if (torch.isnan(inputs["input_ids"]).any() or
@@ -205,7 +209,7 @@ def main():
                     print(f"Failed to load {model_name}: {e}")
                     continue
 
-            print(f"\nRunning suite: {suite['suite_name']}")
+            print(f"\nRUNNING SUITE: {suite['suite_name']}")
 
             length_mapping = {"short": 128, "medium": 512, "long": 1024}
             prompt_len = length_mapping[suite["input_length"]]
