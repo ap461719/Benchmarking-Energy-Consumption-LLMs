@@ -95,7 +95,7 @@ def define_test_suites():
 #     ]
 
 
-def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data, length_label, prompt_len, gen_tokens, batch_size, writer, carbon_intensity):
+def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data, length_label, prompt_len, gen_tokens, batch_size, writer, f, carbon_intensity):
     device = next(model.parameters()).device
     for i in range(0, len(data[:8]), batch_size):
         batch = data[i:i+batch_size]
@@ -184,6 +184,8 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
             num_input_tokens_with_padding, num_output_tokens,
             energy_per_input, energy_per_output, carbon_emissions
         ])
+        f.flush()
+        os.fsync(f.fileno())
 
        
 
@@ -209,7 +211,7 @@ def main():
     CARBON_API_KEY = "2i3v14V1an95KYc0KC5w"
     carbon_intensity = get_carbon_intensity(CARBON_API_KEY)
 
-    with open("results/metrics_output.csv", "w", newline="") as f:
+    with open("results/results_output.csv", "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
             "Model", "Dataset", "Batch_Number",
@@ -270,7 +272,7 @@ def main():
                 # #)
 
                 run_experiment(model_name, context_len, tokenizer, model, dataset_name,
-                               data, test_name, prompt_len, gen_tokens, batch_size, writer, carbon_intensity)
+                               data, test_name, prompt_len, gen_tokens, batch_size, writer, f, carbon_intensity)
 
                 #wandb.finish()
 
