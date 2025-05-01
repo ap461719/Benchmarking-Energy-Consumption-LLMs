@@ -149,16 +149,25 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
         energy = round(measurement.total_energy, 2)
 
         pad_token_id = tokenizer.pad_token_id or tokenizer.eos_token_id
-        num_input_tokens = (inputs["input_ids"] != pad_token_id).sum().item()                               # total input tokens in a batch without padding
+        num_input_tokens = (inputs["input_ids"] != pad_token_id).sum().item()  
+        print("this is the input lengths batch")           
         input_lengths_batch = [len(x) for x in inputs["input_ids"]]
-        output_lengths_batch = [len(seq) - in_len for seq, in_len in zip(output, input_lengths_batch)]      # num new output tokens (excluding input tokens) generated
-        num_output_tokens = sum(output_lengths_batch)                                                       # total output tokens in a batch without padding 
+        print(input_lengths_batch)
+        output_lengths_batch = [len(seq) - in_len for seq, in_len in zip(output, input_lengths_batch)]     
+        print("this is the output lengths batch")
+        print(output_lengths_batch)
+        num_output_tokens = sum(output_lengths_batch)  
+        print("total output tokens in a batch without the input tokens")   
+        print(num_output_tokens)   
+        num_input_tokens_with_padding = inputs["input_ids"].numel()   
+        print("this is the total number of input tokens with padding")
+        print(num_input_tokens_with_padding)                                           
 
         power_data = getattr(measurement, "power_data", [])
         power_values = [p["power"] for p in power_data if "power" in p]
         avg_power = round(sum(power_values) / len(power_values), 1) if power_values else 0.0
 
-        energy_per_input = round(energy / num_input_tokens, 4) if num_input_tokens > 0 else 0.0
+        energy_per_input = round(energy / num_input_tokens_with_padding, 4) if num_input_tokens_with_padding > 0 else 0.0
         energy_per_output = round(energy / num_output_tokens, 4) if num_output_tokens > 0 else 0.0
 
         input_token_counts = (inputs["input_ids"] != pad_token_id).sum(dim=1).tolist()
@@ -170,9 +179,9 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
 
 
         writer.writerow([
-            model_name, context_len, dataset_name, batch_number, prompt_len, gen_tokens, 
-            latency, memory, energy, avg_power,
-            num_input_tokens, num_output_tokens,
+            model_name, dataset_name, batch_number, 
+            latency, memory,
+            num_input_tokens_with_padding, num_output_tokens,
             energy_per_input, energy_per_output, carbon_emissions
         ])
 
@@ -203,8 +212,8 @@ def main():
     with open("results/metrics_output.csv", "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
-            "Model", "Context_Window", "Dataset", "Batch_Number", "Prompt_Length", "Output_Length", 
-            "Latency_sec", "Memory_MB", "Energy_J", "Avg_Power_W",
+            "Model", "Dataset", "Batch_Number",
+            "Latency_sec", "Memory_MB", 
             "Input_Tokens", "Output_Tokens", "Energy_per_InputToken", "Energy_per_OutputToken", "Carbon_Emissions_g"
         ])
 
