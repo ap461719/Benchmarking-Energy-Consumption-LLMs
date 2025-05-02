@@ -93,8 +93,7 @@ def define_test_suites():
 #     ]
 
 
-def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data, length_label, prompt_len, gen_tokens, batch_size, writer, wandb_run):
-    device = next(model.parameters()).device
+def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data, length_label, prompt_len, gen_tokens, batch_size, quantization, device, writer, wandb_run):
     for i in range(0, len(data[:8]), batch_size):
         batch = data[i:i+batch_size]
         batch_number = i//batch_size + 1
@@ -103,7 +102,7 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
         if not any(prompts):
             continue
 
-        print(f"\nRunning: {model_name} | {dataset_name} | {length_label} | Batch #{batch_number}")
+        print(f"\nRunning: {model_name} | {quantization} | {dataset_name} | {length_label} | Batch #{batch_number}")
 
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
@@ -163,7 +162,7 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
         print("Before Padding input token counts:", input_token_counts)
 
         writer.writerow([
-            model_name, context_len, dataset_name, batch_number, prompt_len, gen_tokens, 
+            model_name, quantization, context_len, dataset_name, batch_number, prompt_len, gen_tokens, 
             latency, memory, energy, avg_power,
             num_input_tokens, num_output_tokens,
             energy_per_input, energy_per_output
@@ -199,9 +198,12 @@ def main():
     }
     test_suites = define_test_suites()
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     previous_model_name = None
     model = None
     tokenizer = None
+    previous_quantization = None
 
     with open("results/metrics_output.csv", "w", newline="") as f:
         writer = csv.writer(f)
@@ -215,66 +217,70 @@ def main():
         print("Starting experiments...")
         print("++++++++++++++++++++++++++++++++\n")
 
-        for suite in test_suites:
-            model_name = suite["model"]
-            dataset_name = suite["dataset"]
-            batch_size = suite["batch_size"]
-            context_len = models[model_name]
-            data = datasets[dataset_name]
+        # TODO add support for fp 32 by using A100 GPU
+        for quantization in [ "bfp16", "int4", "int8", "fp16"]:
+            for suite in test_suites:
+                model_name = suite["model"]
+                dataset_name = suite["dataset"]
+                batch_size = suite["batch_size"]
+                context_len = models[model_name]
+                data = datasets[dataset_name]
 
-            if model_name != previous_model_name:
-                if model is not None:
-                    del model
-                    del tokenizer
-                    torch.cuda.empty_cache()
-                try:
-                    model, tokenizer = load_llama(model_name)
-                    previous_model_name = model_name
-                except Exception as e:
-                    print(f"Failed to load {model_name}: {e}")
-                    continue
-
-            print(f"\n=======================================")
-            print(f"RUNNING SUITE: {suite['suite_name']} ... ")
-            print(f"=======================================\n")
-
-            length_mapping = {"short": 128, "medium": 512, "long": 1024}
-            prompt_len = length_mapping[suite["input_length"]]
-            gen_tokens = length_mapping[suite["output_length"]]
-
-            try:
-                test_name = f"input{prompt_len}_output{gen_tokens}"
-
-                run = wandb.init(
-                project="llm-inference-energy-benchmarking",
-                name=f"{test_name}-{time.strftime('%Y%m%d-%H%M%S')}",
-                reinit=True,
-                config={
-                    "suite": suite["suite_name"],
-                    "test_name": test_name,
-                    "model": model_name,
-                    "dataset": dataset_name,
-                    "batch_size": batch_size,
-                    "context_window": context_len,
-                    "prompt_length": prompt_len,
-                    "output_length": gen_tokens,
-                    "device": torch.cuda.get_device_name(torch.cuda.current_device()),
-                    "gpu_memory_total_gb": torch.cuda.get_device_properties(0).total_memory / 1e9
-                    }
-                )
-
-                run_experiment(model_name, context_len, tokenizer, model, dataset_name,
-                               data, test_name, prompt_len, gen_tokens, batch_size, writer, run)
-
-                wandb.finish()
+                if model_name != previous_model_name or quantization != previous_quantization:
+                    if model is not None:
+                        del model
+                        del tokenizer
+                        torch.cuda.empty_cache()
+                    try:
+                        model, tokenizer = load_llama(model_name, device, quantization)
+                        previous_model_name = model_name
+                        previous_quantization = quantization
+                        print(f"Loaded model: {model_name} with quantization: {quantization}")
+                    except Exception as e:
+                        print(f"Failed to load {model_name}: {e}")
+                        continue
 
                 print(f"\n=======================================")
-                print(f"Finished running {suite['suite_name']} ...")
+                print(f"RUNNING SUITE: {suite['suite_name']} ... ")
                 print(f"=======================================\n")
-                
-            except Exception as e:
-                print(f"Experiment error: {e}")
-                continue
+
+                length_mapping = {"short": 128, "medium": 512, "long": 1024}
+                prompt_len = length_mapping[suite["input_length"]]
+                gen_tokens = length_mapping[suite["output_length"]]
+
+                try:
+                    test_name = f"input{prompt_len}_output{gen_tokens}"
+
+                    run = wandb.init(
+                    project="llm-inference-energy-benchmarking",
+                    name=f"{test_name}-{time.strftime('%Y%m%d-%H%M%S')}",
+                    reinit=True,
+                    config={
+                        "suite": suite["suite_name"],
+                        "test_name": test_name,
+                        "model": model_name,
+                        "dataset": dataset_name,
+                        "batch_size": batch_size,
+                        "context_window": context_len,
+                        "prompt_length": prompt_len,
+                        "output_length": gen_tokens,
+                        "device": torch.cuda.get_device_name(torch.cuda.current_device()),
+                        "gpu_memory_total_gb": torch.cuda.get_device_properties(0).total_memory / 1e9
+                        }
+                    )
+
+                    run_experiment(model_name, context_len, tokenizer, model, dataset_name,
+                                data, test_name, prompt_len, gen_tokens, batch_size, quantization, device, writer, run)
+
+                    wandb.finish()
+
+                    print(f"\n=======================================")
+                    print(f"Finished running {suite['suite_name']} ...")
+                    print(f"=======================================\n")
+                    
+                except Exception as e:
+                    print(f"Experiment error: {e}")
+                    continue
 
         f.flush()
         os.fsync(f.fileno())
