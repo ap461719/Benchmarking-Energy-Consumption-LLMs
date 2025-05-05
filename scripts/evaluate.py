@@ -35,7 +35,7 @@ def define_test_suites():
         {
             "suite_name": "suite1",
             "batch_size": 4,
-            "model": "meta-llama/Llama-2-7b-hf",
+            "model": "meta-llama/Llama-2-13b-hf",
             "dataset": "alpaca",
             "input_length": "short",
             "output_length": "short"
@@ -43,7 +43,7 @@ def define_test_suites():
         {
             "suite_name": "suite2",
             "batch_size": 4,
-            "model": "meta-llama/Llama-2-7b-hf",
+            "model": "meta-llama/Llama-2-13b-hf",
             "dataset": "alpaca",
             "input_length": "short",
             "output_length": "medium"
@@ -51,7 +51,7 @@ def define_test_suites():
         {
             "suite_name": "suite3",
             "batch_size": 4,
-            "model": "meta-llama/Llama-2-7b-hf",
+            "model": "meta-llama/Llama-2-13b-hf",
             "dataset": "alpaca",
             "input_length": "short",
             "output_length": "long"
@@ -59,7 +59,7 @@ def define_test_suites():
         {
             "suite_name": "suite4",
             "batch_size": 2,
-            "model": "meta-llama/Llama-2-7b-hf",
+            "model": "meta-llama/Llama-2-13b-hf",
             "dataset": "gsm8k",
             "input_length": "medium",
             "output_length": "medium"
@@ -67,7 +67,7 @@ def define_test_suites():
         {
             "suite_name": "suite5",
             "batch_size": 1,
-            "model": "meta-llama/Llama-2-7b-hf",
+            "model": "meta-llama/Llama-2-13b-hf",
             "dataset": "gsm8k",
             "input_length": "long",
             "output_length": "medium"
@@ -75,7 +75,7 @@ def define_test_suites():
         {
             "suite_name": "suite6",
             "batch_size": 1,
-            "model": "meta-llama/Llama-2-7b-hf",
+            "model": "meta-llama/Llama-2-13b-hf",
             "dataset": "alpaca",
             "input_length": "long",
             "output_length": "long"
@@ -200,7 +200,7 @@ def main():
 
     datasets = load_datasets()
     models = {
-        "meta-llama/Llama-2-7b-hf": 2048
+        "meta-llama/Llama-2-13b-hf": 2048
     }
     test_suites = define_test_suites()
 
