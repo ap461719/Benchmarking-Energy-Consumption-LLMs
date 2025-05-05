@@ -144,16 +144,14 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
         torch.cuda.synchronize()
         memory = torch.cuda.max_memory_allocated() / 1e6
         energy = round(measurement.total_energy, 2)
+        power = energy / latency if latency > 0 else 0.0
+
 
         pad_token_id = tokenizer.pad_token_id or tokenizer.eos_token_id
         num_input_tokens = (inputs["input_ids"] != pad_token_id).sum().item()                               # total input tokens in a batch without padding
         input_lengths_batch = [len(x) for x in inputs["input_ids"]]
         output_lengths_batch = [len(seq) - in_len for seq, in_len in zip(output, input_lengths_batch)]      # num new output tokens (excluding input tokens) generated
         num_output_tokens = sum(output_lengths_batch)                                                       # total output tokens in a batch without padding 
-
-        power_data = getattr(measurement, "power_data", [])
-        power_values = [p["power"] for p in power_data if "power" in p]
-        avg_power = round(sum(power_values) / len(power_values), 1) if power_values else 0.0
 
         energy_per_input = round(energy / num_input_tokens, 4) if num_input_tokens > 0 else 0.0
         energy_per_output = round(energy / num_output_tokens, 4) if num_output_tokens > 0 else 0.0
@@ -163,7 +161,7 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
 
         writer.writerow([
             model_name, quantization, context_len, dataset_name, batch_number, prompt_len, gen_tokens, 
-            latency, memory, energy, avg_power,
+            latency, memory, energy, power,
             num_input_tokens, num_output_tokens,
             energy_per_input, energy_per_output
         ])
@@ -176,7 +174,7 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
             "latency_sec": latency,
             "memory_mb": memory,
             "energy_j": energy,
-            "avg_power_w": avg_power,
+            "power_w": power,
             "input_tokens": num_input_tokens,
             "output_tokens": num_output_tokens,
             "energy_per_input_token": energy_per_input,
@@ -209,7 +207,7 @@ def main():
         writer = csv.writer(f)
         writer.writerow([
             "Model", "Context_Window", "Dataset", "Batch_Number", "Prompt_Length", "Output_Length", 
-            "Latency_sec", "Memory_MB", "Energy_J", "Avg_Power_W",
+            "Latency_sec", "Memory_MB", "Energy_J", "Power_W",
             "Input_Tokens", "Output_Tokens", "Energy_per_InputToken", "Energy_per_OutputToken"
         ])
 
