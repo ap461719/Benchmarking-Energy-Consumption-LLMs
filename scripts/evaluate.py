@@ -206,7 +206,7 @@ def main():
     with open("results/metrics_output.csv", "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
-            "Model", "Context_Window", "Dataset", "Batch_Number", "Prompt_Length", "Output_Length", 
+            "Model", "Quantization", "Context_Window", "Dataset", "Batch_Number", "Prompt_Length", "Output_Length", 
             "Latency_sec", "Memory_MB", "Energy_J", "Power_W",
             "Input_Tokens", "Output_Tokens", "Energy_per_InputToken", "Energy_per_OutputToken"
         ])
