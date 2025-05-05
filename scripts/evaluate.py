@@ -9,6 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from models.load_llama import load_llama
 from data_utils.load_data import load_alpaca, load_gsm8k
 from zeus.monitor import ZeusMonitor
+from carbon_utils import get_carbon_intensity, joules_to_carbon
 
 def build_prompt(sample, dataset_name):
     if dataset_name == "alpaca":
@@ -105,7 +106,7 @@ def generate_controlled_suites(
 
 
 
-def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data, length_label, prompt_len, gen_tokens, batch_size, quantization, device, writer, wandb_run):
+def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data, length_label, prompt_len, gen_tokens, batch_size, quantization, device, writer, carbon_intensity, wandb_run):
     for i in range(0, len(data[:8]), batch_size):
         batch = data[i:i+batch_size]
         batch_number = i//batch_size + 1
@@ -163,20 +164,26 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
         num_input_tokens = (inputs["input_ids"] != pad_token_id).sum().item()                               # total input tokens in a batch without padding
         input_lengths_batch = [len(x) for x in inputs["input_ids"]]
         output_lengths_batch = [len(seq) - in_len for seq, in_len in zip(output, input_lengths_batch)]      # num new output tokens (excluding input tokens) generated
-        num_output_tokens = sum(output_lengths_batch)                                                       # total output tokens in a batch without padding 
+        num_output_tokens = sum(output_lengths_batch)  
+        
+        num_input_tokens_with_padding = inputs["input_ids"].numel()                                                     # total output tokens in a batch without padding 
 
-        energy_per_input = round(energy / num_input_tokens, 4) if num_input_tokens > 0 else 0.0
+        energy_per_input = round(energy / num_input_tokens_with_padding, 4) if num_input_tokens_with_padding > 0 else 0.0
         energy_per_output = round(energy / num_output_tokens, 4) if num_output_tokens > 0 else 0.0
 
         input_token_counts = (inputs["input_ids"] != pad_token_id).sum(dim=1).tolist()
         print("Before Padding input token counts:", input_token_counts)
+        
+        carbon_emissions = joules_to_carbon(energy, carbon_intensity)
+        print(f"Carbon emissions: {carbon_emissions} gCO2eq")
 
         writer.writerow([
             model_name, quantization, context_len, dataset_name, batch_number, prompt_len, gen_tokens, 
             latency, memory, energy, power,
             num_input_tokens, num_output_tokens,
-            energy_per_input, energy_per_output
+            energy_per_input, energy_per_output, carbon_emissions
         ])
+       
 
         wandb_run.log({
             "batch_size": batch_size,
@@ -196,17 +203,21 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
 
         print(f" Input tokens actually used: {num_input_tokens} | Output tokens generated: {num_output_tokens}")
         print(f"Done | Latency: {latency:.2f}s | Mem: {memory:.0f}MB | "
-              f"Energy: {energy}J | Per-Token Energy (in/out): {energy_per_input}/{energy_per_output} J")
+              f"Energy: {energy}J | Carbon: {carbon_emissions}gCO2eq | "
+              f"Per-Token Energy (in/out): {energy_per_input}/{energy_per_output} J")
 
 def main():
     os.makedirs("results", exist_ok=True)
     os.makedirs("logs", exist_ok=True)
+
 
     datasets = load_datasets()
     models = {
         "meta-llama/Llama-2-7b-hf": 2048
     }
     test_suites = []
+    CARBON_API_KEY = "2i3v14V1an95KYc0KC5w"
+    carbon_intensity = get_carbon_intensity(CARBON_API_KEY)
 
     # add suites of tests to vary input length
     test_suites += generate_controlled_suites(
@@ -251,7 +262,7 @@ def main():
         writer.writerow([
             "Model", "Quantization", "Context_Window", "Dataset", "Batch_Number", "Prompt_Length", "Output_Length", 
             "Latency_sec", "Memory_MB", "Energy_J", "Power_W",
-            "Input_Tokens", "Output_Tokens", "Energy_per_InputToken", "Energy_per_OutputToken"
+            "Input_Tokens", "Output_Tokens", "Energy_per_InputToken", "Energy_per_OutputToken, Carbon_gCO2eq"
         ])
 
         print("\n++++++++++++++++++++++++++++++++")
@@ -312,7 +323,7 @@ def main():
                 )
 
                 run_experiment(model_name, context_len, tokenizer, model, dataset_name,
-                            data, test_name, prompt_len, gen_tokens, batch_size, quantization, device, writer, run)
+                            data, test_name, prompt_len, gen_tokens, batch_size, quantization, device, writer, carbon_intensity, run)
 
                 wandb.finish()
 
