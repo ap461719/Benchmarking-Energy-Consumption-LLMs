@@ -107,6 +107,15 @@ def generate_controlled_suites(
 
 
 def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data, length_label, prompt_len, gen_tokens, batch_size, quantization, device, writer, carbon_intensity, wandb_run):
+    
+    total_energy = 0
+    total_latency = 0
+    total_carbon = 0
+
+    total_input_tokens_with_padding = 0
+    total_output_tokens = 0
+
+    
     for i in range(0, len(data[:8]), batch_size):
         batch = data[i:i+batch_size]
         batch_number = i//batch_size + 1
@@ -132,7 +141,6 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
         ).to(device)
 
         input_token_lens = [len(seq) for seq in inputs["input_ids"]] # len(seq) == prompt_len for each seq
-        print("input token lengths: ", input_token_lens)  
 
         if any(in_len + gen_tokens > context_len for in_len in input_token_lens):
             print(f"Skipping batch {i//batch_size + 1} due to context length limit.")
@@ -146,7 +154,6 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
             (inputs["input_ids"] < 0).any()):
             continue
 
-        print("max new tokens argument: ", gen_tokens)
         start = time.time()
         with torch.no_grad():
             output = model.generate(**inputs, max_new_tokens=gen_tokens, min_new_tokens=gen_tokens)
@@ -154,57 +161,68 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
 
         measurement = zeus_monitor.end_window("inference")
         latency = end - start
+        total_latency += round(latency, 4)
         torch.cuda.synchronize()
-        memory = torch.cuda.max_memory_allocated() / 1e6
+
+        # update total energy consumption
         energy = round(measurement.total_energy, 2)
-        power = energy / latency if latency > 0 else 0.0
+        total_energy += energy
 
-
+        # update total carbon emissions
         pad_token_id = tokenizer.pad_token_id or tokenizer.eos_token_id
-        num_input_tokens = (inputs["input_ids"] != pad_token_id).sum().item()                               # total input tokens in a batch without padding
+        num_input_tokens = (inputs["input_ids"] != pad_token_id).sum().item()
         input_lengths_batch = [len(x) for x in inputs["input_ids"]]
-        output_lengths_batch = [len(seq) - in_len for seq, in_len in zip(output, input_lengths_batch)]      # num new output tokens (excluding input tokens) generated
+        output_lengths_batch = [len(seq) - in_len for seq, in_len in zip(output, input_lengths_batch)]
+        
+        # input and output token counts
         num_output_tokens = sum(output_lengths_batch)  
-        
-        num_input_tokens_with_padding = inputs["input_ids"].numel()                                                     # total output tokens in a batch without padding 
+        num_input_tokens_with_padding = inputs["input_ids"].numel()     
+        total_input_tokens_with_padding += num_input_tokens_with_padding 
+        total_output_tokens += num_output_tokens
 
-        energy_per_input = round(energy / num_input_tokens_with_padding, 4) if num_input_tokens_with_padding > 0 else 0.0
-        energy_per_output = round(energy / num_output_tokens, 4) if num_output_tokens > 0 else 0.0
-
-        input_token_counts = (inputs["input_ids"] != pad_token_id).sum(dim=1).tolist()
-        print("Before Padding input token counts:", input_token_counts)
+        # input tokens without padding - not required for now
+        #input_token_counts = (inputs["input_ids"] != pad_token_id).sum(dim=1).tolist()
         
+        # carbon emissions calculation
         carbon_emissions = joules_to_carbon(energy, carbon_intensity)
-        print(f"Carbon emissions: {carbon_emissions} gCO2eq")
+        total_carbon = round(total_carbon+ carbon_emissions, 4)
 
-        writer.writerow([
-            model_name, quantization, context_len, dataset_name, batch_number, prompt_len, gen_tokens, 
-            latency, memory, energy, power,
-            num_input_tokens, num_output_tokens,
-            energy_per_input, energy_per_output, carbon_emissions
-        ])
-       
+    # get power, energy per input token, and evergy per output token
+    power = round(total_energy / total_latency, 4) if total_latency > 0 else 0
+    energy_per_input_token = round(total_energy / total_input_tokens_with_padding, 4) if total_input_tokens_with_padding > 0 else 0.0
+    energy_per_output_token = round(total_energy / total_output_tokens, 4) if total_output_tokens > 0 else 0.0
+            
+    # what was the maximim memory used during the run?
+    max_memory = round(torch.cuda.max_memory_allocated() / 1e6, 4)
+    torch.cuda.reset_peak_memory_stats()
 
-        wandb_run.log({
-            "batch_size": batch_size,
-            "batch_number": batch_number,
-            "prompt_len": prompt_len,
-            "output_len": gen_tokens,
-            "latency_sec": latency,
-            "memory_mb": memory,
-            "energy_j": energy,
-            "power_w": power,
-            "input_tokens": num_input_tokens,
-            "output_tokens": num_output_tokens,
-            "energy_per_input_token": energy_per_input,
-            "energy_per_output_token": energy_per_output,
-        })
+    writer.writerow([
+        model_name, quantization, context_len, dataset_name, batch_number,
+        total_latency, max_memory, total_energy, power,
+        total_input_tokens_with_padding, total_output_tokens,
+        energy_per_input_token, energy_per_output_token, carbon_emissions
+    ])
+    
 
+    wandb_run.log({
+        "batch_size": batch_size,
+        "batch_number": batch_number,
+        "prompt_len": prompt_len,
+        "output_len": gen_tokens,
+        "latency_sec": latency,
+        "memory_mb": max_memory,
+        "energy_j": energy,
+        "power_w": power,
+        "input_tokens": num_input_tokens,
+        "output_tokens": num_output_tokens,
+        "energy_per_input_token": energy_per_input_token,
+        "energy_per_output_token": energy_per_output_token,
+    })
 
-        print(f" Input tokens actually used: {num_input_tokens} | Output tokens generated: {num_output_tokens}")
-        print(f"Done | Latency: {latency:.2f}s | Mem: {memory:.0f}MB | "
-              f"Energy: {energy}J | Carbon: {carbon_emissions}gCO2eq | "
-              f"Per-Token Energy (in/out): {energy_per_input}/{energy_per_output} J")
+    print(f"\n\n=======================================")
+    print(f"Done | Total Latency: {total_latency:.2f}s | Max Memory Footprint: {max_memory:.0f}MB | "
+            f"Energy: {total_energy}J | Carbon: {total_carbon}gCO2eq | "
+            f"Per-Token Energy (in/out): {energy_per_input_token}/{energy_per_output_token} J")
 
 def main():
     os.makedirs("results", exist_ok=True)
@@ -222,33 +240,33 @@ def main():
     # add suites of tests to vary input length
     test_suites += generate_controlled_suites(
         sweep_variable="input_length",
-        sweep_values=["short", "medium", "long"]
+        sweep_values=["short"]
     )
 
-    # add suites of tests to vary output length
-    test_suites += generate_controlled_suites(
-        sweep_variable="output_length",
-        sweep_values=["short", "medium", "long"]
-    )
+    # # add suites of tests to vary output length
+    # test_suites += generate_controlled_suites(
+    #     sweep_variable="output_length",
+    #     sweep_values=["short", "medium", "long"]
+    # )
 
-    # add suites of tests to vary dataset
-    test_suites += generate_controlled_suites(
-        sweep_variable="dataset",
-        sweep_values=["alpaca", "gsm8k"]
-    )
+    # # add suites of tests to vary dataset
+    # test_suites += generate_controlled_suites(
+    #     sweep_variable="dataset",
+    #     sweep_values=["alpaca", "gsm8k"]
+    # )
 
-    # add suites of tests to vary quantization level
-    # TODO add support for fp 32 by using A100 GPU
-    test_suites += generate_controlled_suites(
-        sweep_variable="quantization",
-        sweep_values=[ "bfp16", "int4", "int8", "fp16"]
-    )
+    # # add suites of tests to vary quantization level
+    # # TODO add support for fp 32 by using A100 GPU
+    # test_suites += generate_controlled_suites(
+    #     sweep_variable="quantization",
+    #     sweep_values=[ "bfp16", "int4", "int8", "fp16"]
+    # )
 
-    # add suites of tests to vary batch size
-    test_suites += generate_controlled_suites(
-        sweep_variable="batch_size",
-        sweep_values=[1, 2, 4]
-    )
+    # # add suites of tests to vary batch size
+    # test_suites += generate_controlled_suites(
+    #     sweep_variable="batch_size",
+    #     sweep_values=[1, 2, 4]
+    # )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -260,9 +278,9 @@ def main():
     with open("results/metrics_output.csv", "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
-            "Model", "Quantization", "Context_Window", "Dataset", "Batch_Number", "Prompt_Length", "Output_Length", 
+            "Model", "Quantization", "Context_Window", "Dataset", "Batch_Number",
             "Latency_sec", "Memory_MB", "Energy_J", "Power_W",
-            "Input_Tokens", "Output_Tokens", "Energy_per_InputToken", "Energy_per_OutputToken, Carbon_gCO2eq"
+            "Input_Tokens", "Output_Tokens", "Energy_per_InputToken", "Energy_per_OutputToken", "Carbon_gCO2eq"
         ])
 
         print("\n++++++++++++++++++++++++++++++++")
