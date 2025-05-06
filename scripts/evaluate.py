@@ -6,7 +6,7 @@ import torch
 import wandb
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from models.load_llama import load_llama
+from models.load_model import load_model
 from data_utils.load_data import load_alpaca, load_gsm8k
 from zeus.monitor import ZeusMonitor
 from carbon_utils import get_carbon_intensity, joules_to_carbon
@@ -231,17 +231,18 @@ def main():
 
     datasets = load_datasets()
     models = {
-        "meta-llama/Llama-2-7b-hf": 2048
+        "meta-llama/Llama-2-7b-hf": 2048,
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": 131072
     }
     test_suites = []
     CARBON_API_KEY = "2i3v14V1an95KYc0KC5w"
     carbon_intensity = get_carbon_intensity(CARBON_API_KEY)
 
     # add suites of tests to vary input length
-    test_suites += generate_controlled_suites(
-        sweep_variable="input_length",
-        sweep_values=["short"]
-    )
+    # test_suites += generate_controlled_suites(
+    #     sweep_variable="input_length",
+    #     sweep_values=["short"]
+    # )
 
     # # add suites of tests to vary output length
     # test_suites += generate_controlled_suites(
@@ -267,6 +268,12 @@ def main():
     #     sweep_variable="batch_size",
     #     sweep_values=[1, 2, 4]
     # )
+
+    # add suites of tests to vary model
+    test_suites += generate_controlled_suites(
+        sweep_variable="model",
+        sweep_values=["deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "meta-llama/Llama-2-7b-hf"]
+    )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -302,7 +309,7 @@ def main():
                     del tokenizer
                     torch.cuda.empty_cache()
                 try:
-                    model, tokenizer = load_llama(model_name, device, quantization)
+                    model, tokenizer = load_model(model_name, device, quantization)
                     previous_model_name = model_name
                     previous_quantization = quantization
                     print(f"Loaded model: {model_name} with quantization: {quantization}")
