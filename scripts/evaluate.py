@@ -2,6 +2,7 @@ import sys
 import os
 import time
 import csv
+import re
 import torch
 import wandb
 
@@ -106,7 +107,7 @@ def generate_controlled_suites(
 
 
 
-def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data, length_label, prompt_len, gen_tokens, batch_size, quantization, device, writer, carbon_intensity, wandb_run):
+def run_experiment(sweep_name, suite_name, model_name, context_len, tokenizer, model, dataset_name, data, length_label, prompt_len, gen_tokens, batch_size, quantization, device, writer, carbon_intensity, wandb_run):
     
     total_energy = 0
     total_latency = 0
@@ -117,16 +118,18 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
 
     num_samples_to_execute = 32
 
-    
+    print(f"\nRunning: {sweep_name} | {suite_name} | {model_name} | {quantization} | {dataset_name} | {length_label} | {batch_size}")
+
     for i in range(0, num_samples_to_execute, batch_size):
         batch = data[i:i+batch_size]
         batch_number = i//batch_size + 1
+
+        print(f"Batch {batch_number} of {num_samples_to_execute//batch_size}...")
+
         prompts = [build_prompt(s, dataset_name) for s in batch]
 
         if not any(prompts):
             continue
-
-        print(f"\nRunning: {model_name} | {quantization} | {dataset_name} | {length_label} | Batch #{batch_number}")
 
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
@@ -202,29 +205,32 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
         model_name, quantization, context_len, dataset_name, batch_size,
         total_latency, max_memory, total_energy, power,
         total_input_tokens_with_padding, total_output_tokens,
-        energy_per_input_token, energy_per_output_token, carbon_emissions
+        energy_per_input_token, energy_per_output_token, total_carbon
     ])
     
-
-    wandb_run.log({
-        "batch_size": batch_size,
-        "batch_number": batch_number,
-        "prompt_len": prompt_len,
-        "output_len": gen_tokens,
-        "latency_sec": latency,
-        "memory_mb": max_memory,
-        "energy_j": energy,
-        "power_w": power,
-        "input_tokens": num_input_tokens,
-        "output_tokens": num_output_tokens,
-        "energy_per_input_token": energy_per_input_token,
-        "energy_per_output_token": energy_per_output_token,
-    })
-
     print(f"\n\n=======================================")
     print(f"Done | Total Latency: {total_latency:.2f}s | Max Memory Footprint: {max_memory:.0f}MB | "
             f"Energy: {total_energy}J | Carbon: {total_carbon}gCO2eq | "
             f"Per-Token Energy (in/out): {energy_per_input_token}/{energy_per_output_token} J")
+
+    return {
+        "Latency": total_latency,
+        "Memory (MB)": max_memory,
+        "Energy (J)": total_energy,
+        "Power (W)": power,
+        "Energy Per Input Token": energy_per_input_token,
+        "Energy Per Outout Token": energy_per_output_token,
+        "Carbon (CO2)": total_carbon,
+        "Total Input Tokens": total_input_tokens_with_padding,
+        "Total Output Tokens": total_output_tokens,
+
+        "Model Name": model_name,
+        "Quantization": quantization,
+        "Dataset": dataset_name,
+        "Batch Size": batch_size,
+        "Input Length (Tokens)": prompt_len,
+        "Output Length (Tokens)": gen_tokens,
+    }
 
 def main():
     start_time_experiment = time.time()
@@ -237,46 +243,65 @@ def main():
         "meta-llama/Llama-2-7b-hf": 2048,
         "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": 131072
     }
-    test_suites = []
-    CARBON_API_KEY = "2i3v14V1an95KYc0KC5w"
+    test_suites = {}
+    # CARBON_API_KEY = "2i3v14V1an95KYc0KC5w"
+    CARBON_API_KEY = "Bth2JcDfTRrujfQ81V9f"
+    # CARBON_API_KEY = os.getenv("CARBON_API_KEY")
     carbon_intensity = get_carbon_intensity(CARBON_API_KEY)
 
-    # add suites of tests to vary input length
-    test_suites += generate_controlled_suites(
-        sweep_variable="input_length",
-        sweep_values=["short", "medium", "long"],
-    )
+    sweep_config = {
+        "input_length": ["short", "medium", "long"],
+        "output_length": ["short", "medium", "long"],
+        "dataset": ["alpaca", "gsm8k"],
+        "quantization": ["fp16", "int4", "int8"],
+        "batch_size": [1, 2, 4],
+        "model": ["deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "meta-llama/Llama-2-7b-hf"]
+    }
 
-    # add suites of tests to vary output length
-    test_suites += generate_controlled_suites(
-        sweep_variable="output_length",
-        sweep_values=["short", "medium", "long"]
-    )
+    for sweep_variable, sweep_values in sweep_config.items():
+        test_suites[sweep_variable] = []
+        for sweep_val in sweep_values:
+            test_suites[sweep_variable] += generate_controlled_suites(
+                sweep_variable=sweep_variable,
+                sweep_values=[sweep_val],
+            )
 
-    # add suites of tests to vary dataset
-    test_suites += generate_controlled_suites(
-        sweep_variable="dataset",
-        sweep_values=["alpaca", "gsm8k"]
-    )
+    # # add suites of tests to vary input length
+    # test_suites += generate_controlled_suites(
+    #     sweep_variable="input_length",
+    #     sweep_values=["short", "medium", "long"],
+    # )
 
-    # add suites of tests to vary quantization level
-    # TODO add support for fp 32 by using A100 GPU
-    test_suites += generate_controlled_suites(
-        sweep_variable="quantization",
-        sweep_values=[ "bfp16", "int4", "int8", "fp16"]
-    )
+    # # add suites of tests to vary output length
+    # test_suites += generate_controlled_suites(
+    #     sweep_variable="output_length",
+    #     sweep_values=["short", "medium", "long"]
+    # )
 
-    # add suites of tests to vary batch size
-    test_suites += generate_controlled_suites(
-        sweep_variable="batch_size",
-        sweep_values=[1, 2, 4]
-    )
+    # # add suites of tests to vary dataset
+    # test_suites += generate_controlled_suites(
+    #     sweep_variable="dataset",
+    #     sweep_values=["alpaca", "gsm8k"]
+    # )
 
-    # add suites of tests to vary model
-    test_suites += generate_controlled_suites(
-        sweep_variable="model",
-        sweep_values=["deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "meta-llama/Llama-2-7b-hf"]
-    )
+    # # add suites of tests to vary quantization level
+    # # TODO add support for fp 32 by using A100 GPU
+    # test_suites += generate_controlled_suites(
+    #     sweep_variable="quantization",
+    #     sweep_values=[ "bfp16", "int4", "int8", "fp16"]
+    # )
+
+    # # add suites of tests to vary batch size
+    # test_suites += generate_controlled_suites(
+    #     sweep_variable="batch_size",
+    #     sweep_values=[1, 2, 4]
+    # )
+
+    # # add suites of tests to vary model
+    # test_suites += generate_controlled_suites(
+    #     sweep_variable="model",
+    #     sweep_values=["deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "meta-llama/Llama-2-7b-hf"]
+    # )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -298,70 +323,99 @@ def main():
         print("++++++++++++++++++++++++++++++++\n")
 
 
-        for suite in test_suites:
-            model_name = suite["model"]
-            dataset_name = suite["dataset"]
-            batch_size = suite["batch_size"]
-            context_len = models[model_name]
-            data = datasets[dataset_name]
-            quantization = suite["quantization"]
+        for sweep_name, test_suites in test_suites.items():
 
-            if model_name != previous_model_name or quantization != previous_quantization:
-                if model is not None:
-                    del model
-                    del tokenizer
-                    torch.cuda.empty_cache()
-                try:
-                    model, tokenizer = load_model(model_name, device, quantization)
-                    previous_model_name = model_name
-                    previous_quantization = quantization
-                    print(f"Loaded model: {model_name} with quantization: {quantization}")
-                except Exception as e:
-                    print(f"Failed to load {model_name}: {e}")
-                    continue
-
-            print(f"\n=======================================")
-            print(f"RUNNING SUITE: {suite['suite_name']} ... ")
+            print(f"\n\n=======================================")
+            print(f"Running sweep: {sweep_name} ...")
+            print(f"Number of test suites: {len(test_suites)}")
             print(f"=======================================\n")
 
-            length_mapping = {"short": 128, "medium": 512, "long": 1024}
-            prompt_len = length_mapping[suite["input_length"]]
-            gen_tokens = length_mapping[suite["output_length"]]
+            # sweep_table = wandb.Table(columns=[
+            #     "Latency", "Memory (MB)", "Energy (J)", "Power (W)", "Energy per Input Token", "Energy per Output Token", 
+            #     "Carbon (gCO2eq)", "Total Input Tokens", "Total Output Tokens",
+            #     # sweep groups
+            #     "Model Name", "Quantization", "Dataset", "Batch Size", "Input Length (Tokens)", "Output Length (Tokens)"
+            # ])
 
-            try:
-                test_name = f"input{prompt_len}_output{gen_tokens}"
-
-                run = wandb.init(
+            run = wandb.init(
                 project="llm-inference-energy-benchmarking",
-                name=f"{test_name}-{time.strftime('%Y%m%d-%H%M%S')}",
+                name=re.sub(r"(?:^|_)(\w)", lambda m: (" " if m.start() != 0 else "") + m.group(1).upper(), sweep_name),
                 reinit=True,
                 config={
-                    "suite": suite["suite_name"],
-                    "test_name": test_name,
-                    "model": model_name,
-                    "dataset": dataset_name,
-                    "batch_size": batch_size,
-                    "context_window": context_len,
-                    "prompt_length": prompt_len,
-                    "output_length": gen_tokens,
-                    "quantization": quantization,
                     "device": torch.cuda.get_device_name(torch.cuda.current_device()),
-                    "gpu_memory_total_gb": torch.cuda.get_device_properties(0).total_memory / 1e9
+                    "gpu_memory_total_gb": torch.cuda.get_device_properties(0).total_memory / 1e9, 
                     }
                 )
 
-                run_experiment(model_name, context_len, tokenizer, model, dataset_name,
-                            data, test_name, prompt_len, gen_tokens, batch_size, quantization, device, writer, carbon_intensity, run)
+            for suite in test_suites:
+                model_name = suite["model"]
+                dataset_name = suite["dataset"]
+                batch_size = suite["batch_size"]
+                context_len = models[model_name]
+                data = datasets[dataset_name]
+                quantization = suite["quantization"]
 
-                wandb.finish()
+                if model_name != previous_model_name or quantization != previous_quantization:
+                    if model is not None:
+                        del model
+                        del tokenizer
+                        torch.cuda.empty_cache()
+                    try:
+                        model, tokenizer = load_model(model_name, device, quantization)
+                        previous_model_name = model_name
+                        previous_quantization = quantization
+                        print(f"Loaded model: {model_name} with quantization: {quantization}")
+                    except Exception as e:
+                        print(f"Failed to load {model_name}: {e}")
+                        continue
 
-                print(f"\n=======================================")
+                print(f"RUNNING SUITE: {suite['suite_name']} ... ")
+
+                length_mapping = {"short": 128, "medium": 512, "long": 1024}
+                prompt_len = length_mapping[suite["input_length"]]
+                gen_tokens = length_mapping[suite["output_length"]]
+
+                try:
+                    test_name = f"input{prompt_len}_output{gen_tokens}"
+
+                    result = run_experiment(sweep_name, suite['suite_name'], model_name, context_len, tokenizer, model, dataset_name,
+                                data, test_name, prompt_len, gen_tokens, batch_size, quantization, device, writer, carbon_intensity, run)
+                    
+                    # sweep_table.add_data(
+                    #     result["Latency"],
+                    #     result["Memory (MB)"],
+                    #     result["Energy (J)"],
+                    #     result["Power (W)"],
+                    #     result["Energy Per Input Token"],
+                    #     result["Energy Per Outout Token"],
+                    #     result["Carbon (CO2)"],
+                    #     result["Total Input Tokens"],
+                    #     result["Total Output Tokens"],
+
+                    #     # sweep groups
+                    #     result["Model Name"],
+                    #     result["Quantization"],
+                    #     result["Dataset"],
+                    #     result["Batch Size"],
+                    #     result["Input Length (Tokens)"],
+                    #     result["Output Length (Tokens)"]
+                    # )
+
+                    wandb.log(result)
+
+                except Exception as e:
+                    print(f"Experiment error: {e}")
+                    continue
+                    
                 print(f"Finished running {suite['suite_name']} ...")
-                print(f"=======================================\n")
-                
-            except Exception as e:
-                print(f"Experiment error: {e}")
-                continue
+
+            # wandb.log({f"{sweep_name.title()} Sweep Table": sweep_table})
+
+            wandb.finish()
+
+            print("\n\n=======================================")
+            print(f"Finished sweep: {sweep_name} ...")
+            print("=======================================\n")
 
         f.flush()
         os.fsync(f.fileno())
