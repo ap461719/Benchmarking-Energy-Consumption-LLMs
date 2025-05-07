@@ -115,8 +115,10 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
     total_input_tokens_with_padding = 0
     total_output_tokens = 0
 
+    num_samples_to_execute = 32
+
     
-    for i in range(0, len(data[:8]), batch_size):
+    for i in range(0, num_samples_to_execute, batch_size):
         batch = data[i:i+batch_size]
         batch_number = i//batch_size + 1
         prompts = [build_prompt(s, dataset_name) for s in batch]
