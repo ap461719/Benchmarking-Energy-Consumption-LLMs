@@ -227,6 +227,7 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
             f"Per-Token Energy (in/out): {energy_per_input_token}/{energy_per_output_token} J")
 
 def main():
+    start_time_experiment = time.time()
     os.makedirs("results", exist_ok=True)
     os.makedirs("logs", exist_ok=True)
 
@@ -368,6 +369,10 @@ def main():
     print("\n++++++++++++++++++++++++++++++++")
     print("All experiments completed!")
     print("++++++++++++++++++++++++++++++++\n")
+
+    end_time_experiment = time.time()
+    total_time = end_time_experiment - start_time_experiment
+    print(f"Total time taken for all experiments: {total_time/60:.2f} minutes")
 
 if __name__ == "__main__":
     main()
