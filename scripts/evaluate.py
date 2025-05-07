@@ -410,7 +410,6 @@ def main():
                 print(f"Finished running {suite['suite_name']} ...")
 
             # wandb.log({f"{sweep_name.title()} Sweep Table": sweep_table})
-
             wandb.finish()
 
             print("\n\n=======================================")
