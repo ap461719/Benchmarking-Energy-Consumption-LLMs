@@ -197,7 +197,7 @@ def run_experiment(model_name, context_len, tokenizer, model, dataset_name, data
     torch.cuda.reset_peak_memory_stats()
 
     writer.writerow([
-        model_name, quantization, context_len, dataset_name, batch_number,
+        model_name, quantization, context_len, dataset_name, batch_size,
         total_latency, max_memory, total_energy, power,
         total_input_tokens_with_padding, total_output_tokens,
         energy_per_input_token, energy_per_output_token, carbon_emissions
@@ -239,35 +239,35 @@ def main():
     carbon_intensity = get_carbon_intensity(CARBON_API_KEY)
 
     # add suites of tests to vary input length
-    # test_suites += generate_controlled_suites(
-    #     sweep_variable="input_length",
-    #     sweep_values=["short"]
-    # )
+    test_suites += generate_controlled_suites(
+        sweep_variable="input_length",
+        sweep_values=["short", "medium", "long"],
+    )
 
-    # # add suites of tests to vary output length
-    # test_suites += generate_controlled_suites(
-    #     sweep_variable="output_length",
-    #     sweep_values=["short", "medium", "long"]
-    # )
+    # add suites of tests to vary output length
+    test_suites += generate_controlled_suites(
+        sweep_variable="output_length",
+        sweep_values=["short", "medium", "long"]
+    )
 
-    # # add suites of tests to vary dataset
-    # test_suites += generate_controlled_suites(
-    #     sweep_variable="dataset",
-    #     sweep_values=["alpaca", "gsm8k"]
-    # )
+    # add suites of tests to vary dataset
+    test_suites += generate_controlled_suites(
+        sweep_variable="dataset",
+        sweep_values=["alpaca", "gsm8k"]
+    )
 
-    # # add suites of tests to vary quantization level
-    # # TODO add support for fp 32 by using A100 GPU
-    # test_suites += generate_controlled_suites(
-    #     sweep_variable="quantization",
-    #     sweep_values=[ "bfp16", "int4", "int8", "fp16"]
-    # )
+    # add suites of tests to vary quantization level
+    # TODO add support for fp 32 by using A100 GPU
+    test_suites += generate_controlled_suites(
+        sweep_variable="quantization",
+        sweep_values=[ "bfp16", "int4", "int8", "fp16"]
+    )
 
-    # # add suites of tests to vary batch size
-    # test_suites += generate_controlled_suites(
-    #     sweep_variable="batch_size",
-    #     sweep_values=[1, 2, 4]
-    # )
+    # add suites of tests to vary batch size
+    test_suites += generate_controlled_suites(
+        sweep_variable="batch_size",
+        sweep_values=[1, 2, 4]
+    )
 
     # add suites of tests to vary model
     test_suites += generate_controlled_suites(
@@ -285,7 +285,7 @@ def main():
     with open("results/metrics_output.csv", "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
-            "Model", "Quantization", "Context_Window", "Dataset", "Batch_Number",
+            "Model", "Quantization", "Context_Window", "Dataset", "Batch_Size",
             "Latency_sec", "Memory_MB", "Energy_J", "Power_W",
             "Input_Tokens", "Output_Tokens", "Energy_per_InputToken", "Energy_per_OutputToken", "Carbon_gCO2eq"
         ])
