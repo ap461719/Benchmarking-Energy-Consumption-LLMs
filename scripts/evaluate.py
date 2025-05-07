@@ -250,13 +250,24 @@ def main():
     carbon_intensity = get_carbon_intensity(CARBON_API_KEY)
 
     sweep_config = {
-        "input_length": ["short", "medium", "long"],
-        "output_length": ["short", "medium", "long"],
-        "dataset": ["alpaca", "gsm8k"],
-        "quantization": ["fp16", "int4", "int8"],
-        "batch_size": [1, 2, 4],
+        # "input_length": ["short", "medium", "long"],
+        # "output_length": ["short", "medium", "long"],
+        # "dataset": ["alpaca", "gsm8k"],
+        # "quantization": ["fp16", "int4", "int8"],
+        # "batch_size": [1, 2, 4],
         "model": ["deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "meta-llama/Llama-2-7b-hf"]
     }
+    
+    sweep_titles = {
+        "input_length": "Input Length (Tokens)",
+        "output_length": "Output Length (Tokens)",
+        "dataset": "Dataset",
+        "quantization": "Quantization",
+        "batch_size": "Batch Size",
+        "model": "Model Name"
+    }
+
+    metrics_to_log = ["Latency", "Memory (MB)", "Energy (J)", "Power (W)", "Energy per Input Token", "Energy per Output Token", "Carbon (gCO2eq)", "Total Input Tokens", "Total Output Tokens"]
 
     for sweep_variable, sweep_values in sweep_config.items():
         test_suites[sweep_variable] = []
@@ -330,12 +341,7 @@ def main():
             print(f"Number of test suites: {len(test_suites)}")
             print(f"=======================================\n")
 
-            # sweep_table = wandb.Table(columns=[
-            #     "Latency", "Memory (MB)", "Energy (J)", "Power (W)", "Energy per Input Token", "Energy per Output Token", 
-            #     "Carbon (gCO2eq)", "Total Input Tokens", "Total Output Tokens",
-            #     # sweep groups
-            #     "Model Name", "Quantization", "Dataset", "Batch Size", "Input Length (Tokens)", "Output Length (Tokens)"
-            # ])
+            sweep_table = wandb.Table(columns=metrics_to_log + [sweep_titles[sweep_name]], data=[])
 
             run = wandb.init(
                 project="llm-inference-energy-benchmarking",
@@ -381,35 +387,36 @@ def main():
                     result = run_experiment(sweep_name, suite['suite_name'], model_name, context_len, tokenizer, model, dataset_name,
                                 data, test_name, prompt_len, gen_tokens, batch_size, quantization, device, writer, carbon_intensity, run)
                     
-                    # sweep_table.add_data(
-                    #     result["Latency"],
-                    #     result["Memory (MB)"],
-                    #     result["Energy (J)"],
-                    #     result["Power (W)"],
-                    #     result["Energy Per Input Token"],
-                    #     result["Energy Per Outout Token"],
-                    #     result["Carbon (CO2)"],
-                    #     result["Total Input Tokens"],
-                    #     result["Total Output Tokens"],
+                    sweep_table.add_data(
+                        result["Latency"],
+                        result["Memory (MB)"],
+                        result["Energy (J)"],
+                        result["Power (W)"],
+                        result["Energy Per Input Token"],
+                        result["Energy Per Outout Token"],
+                        result["Carbon (CO2)"],
+                        result["Total Input Tokens"],
+                        result["Total Output Tokens"],
 
-                    #     # sweep groups
-                    #     result["Model Name"],
-                    #     result["Quantization"],
-                    #     result["Dataset"],
-                    #     result["Batch Size"],
-                    #     result["Input Length (Tokens)"],
-                    #     result["Output Length (Tokens)"]
-                    # )
+                        # sweep groups
+                        result[sweep_titles[sweep_name]],
+                    )
 
-                    wandb.log(result)
+                    # wandb.log(result)
 
                 except Exception as e:
                     print(f"Experiment error: {e}")
                     continue
                     
                 print(f"Finished running {suite['suite_name']} ...")
+            
+            for metric in metrics_to_log:
+                wandb.log({
+                        f"{sweep_titles[sweep_name].title()} Sweep Table": wandb.plot.bar(
+                                sweep_table, sweep_titles[sweep_name], metric, title=f"{sweep_titles[sweep_name]} vs {metric}"
+                            )
+                    })
 
-            # wandb.log({f"{sweep_name.title()} Sweep Table": sweep_table})
             wandb.finish()
 
             print("\n\n=======================================")
