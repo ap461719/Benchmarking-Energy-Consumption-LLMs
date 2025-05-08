@@ -103,7 +103,7 @@ See utils/data.py for how these are preprocessed and sampled.
 │
 ├── scripts/                 # Core experiment driver and plot scripts
 │   ├── evaluate.py          # Main script for controlled benchmarking experiments
-│   └── plot_results.py      # (Deprecated) Static bar plot generation for Llama
+│   └── plot_results.py      # (Manual/local plotting) Static bar plot generation for Llama
 │
 ├── utils/                   # Helper modules
 │   ├── carbon_utils.py      # Converts energy to CO2eq using real-time carbon intensity API
@@ -119,6 +119,46 @@ See utils/data.py for how these are preprocessed and sampled.
 ```
 
 The files monitor_gpu.py, parse_power_log.py, and plot_results.py were developed during early stages of the project for GPU monitoring and visualization using nvidia-smi. While not part of the current Zeus-based pipeline, they remain fully functional. Users may optionally reintegrate them for custom logging or offline analysis.
+
+### File Descriptions
+
+- metrics
+    - zeusml.py: Wrapper class around Zeus energy monitor for starting/stopping energy tracking, reporting, saving CSVs, and optionally plotting power traces
+    - monitor_gpu.py: Uses nvidia-smi to log GPU power draw, utilization, and memory usage at a 1-second interval to a CSV file.
+    - parse_power_log.py: Parses nvidia-smi power logs to compute total energy (Joules) and average power (Watts), assuming 1-second sampling intervals.
+
+- results/
+    - gpu_power_log.csv: Example output from monitor_gpu.py containing timestamped power and memory usage data from nvidia-smi.
+    - metrics_output.csv: Main output CSV where all inference metrics from evaluate.py are stored for later visualization or analysis.
+    - results/*.png: Static bar plots (latency, memory, power) generated during earlier visualization stages for selected models and datasets.
+
+- scripts/ 
+    - evaluate.py: Main driver script for running controlled LLM inference experiments across various configurations. Logs metrics to CSV and Weights & Biases (W&B) using Zeus for energy monitoring.
+    - plot_results.py: Generates static bar plots (latency, memory, power, energy) from metrics_output.csv for earlier LLaMA-2 experiments using Seaborn.
+
+- utils/
+    - load_model.py: Loads Hugging Face LLMs with support for quantization (fp16, int8, int4) using bitsandbytes, and configures tokenizers with appropriate padding and trust settings.
+    - data.py: Loads, cleans, and formats datasets (alpaca, gsm8k) for benchmarking. Also includes build_prompt() to create model-ready input strings.
+    - testing.py: Runs per-sweep experiments, handles batching, collects inference metrics (latency, energy, memory, carbon), and writes results to CSV.
+    - carbon_utils.py: Fetches real-time carbon intensity via Electricity Maps API and computes carbon emissions from energy use in grams CO₂-equivalent.
+
+- wandb/: directory gets generated during experiment runtime, contains logs metrics for each experiment and metadata
+
+
+### Sample Results
+
+These imagse represent a very small subset of results we have generated through our experiments: 
+
+![Batch Size vs Energy (J)](results/batchsize-energy.png)
+![Input Length vs Carbon Emission (gCO2eq)](results/inputlength-carbon.png)
+![Quantization vs Energy)](results/quantization-energy.png)
+![Batch Size Table](results/batch-size-table.png)
+
+### Wandb
+
+All visualizations and tables can be viewed on using our [Wandb dashboard](https://wandb.ai/benchmarking-energy-consumption-llms-inference/llm-inference-energy-benchmarking/?nw=nwuserrpp2142). 
+
+The dashboard is divided into panels - each illustrating the impacts of each variable/configuration for a given energy consumption metric (energy, latency). It represents how different variables (batch size, quantization, etc.) affect a particular metric we are trying to benchmark (for eg., carbon emissions). The TABLES panel presents the data captured across each sweep for all metrics. The Runs Panel allows the viewer to capture the visualizations based on each variable (for eg, how does batch size impact latency, energy, power, etc)
 
 ### Future Work:
 
