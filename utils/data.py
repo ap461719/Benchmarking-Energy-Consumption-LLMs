@@ -59,3 +59,21 @@ def load_gsm8k(n_samples=100):
             break
 
     return cleaned
+
+def load_datasets():
+    return {
+        "alpaca": load_alpaca(n_samples=100),
+        "gsm8k": load_gsm8k(n_samples=100)
+    }
+
+def build_prompt(sample, dataset_name):
+    if dataset_name == "alpaca":
+        prompt = sample["instruction"]
+
+        if sample.get("input"):
+            prompt += " " + sample["input"]
+    elif dataset_name == "gsm8k":
+        prompt = sample["question"]
+    else:
+        prompt = ""
+    return prompt

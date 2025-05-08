@@ -8,27 +8,11 @@ import wandb
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.load_model import load_model
-from utils.load_data import load_alpaca, load_gsm8k
+from utils.data import load_datasets, build_prompt
 from zeus.monitor import ZeusMonitor
 from utils.carbon_utils import get_carbon_intensity, joules_to_carbon
 
-def build_prompt(sample, dataset_name):
-    if dataset_name == "alpaca":
-        prompt = sample["instruction"]
 
-        if sample.get("input"):
-            prompt += " " + sample["input"]
-    elif dataset_name == "gsm8k":
-        prompt = sample["question"]
-    else:
-        prompt = ""
-    return prompt
-
-def load_datasets():
-    return {
-        "alpaca": load_alpaca(n_samples=100),
-        "gsm8k": load_gsm8k(n_samples=100)
-    }
 
 def generate_controlled_suites(
     sweep_variable="input_length", 
