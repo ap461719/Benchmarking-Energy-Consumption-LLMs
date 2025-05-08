@@ -1,6 +1,6 @@
 # Benchmarking Energy Consumption for LLM Inference Across Diverse Workloads
 *Group Members: Sri Iyengar, Anushka Pachary, Radhika Patel*  
-*Mentored by: Jishan Desai, Rakene Chowdhary*
+*Mentored by: Jishan Desai, Rakene Chowdhury*
 
 ---
 
