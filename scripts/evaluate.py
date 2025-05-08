@@ -7,10 +7,10 @@ import torch
 import wandb
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from models.load_model import load_model
-from data_utils.load_data import load_alpaca, load_gsm8k
+from utils.load_model import load_model
+from utils.load_data import load_alpaca, load_gsm8k
 from zeus.monitor import ZeusMonitor
-from carbon_utils import get_carbon_intensity, joules_to_carbon
+from utils.carbon_utils import get_carbon_intensity, joules_to_carbon
 
 def build_prompt(sample, dataset_name):
     if dataset_name == "alpaca":
@@ -29,58 +29,6 @@ def load_datasets():
         "alpaca": load_alpaca(n_samples=100),
         "gsm8k": load_gsm8k(n_samples=100)
     }
-
-def define_test_suites():
-    return [
-        {
-            "suite_name": "suite1",
-            "batch_size": 4,
-            "model": "meta-llama/Llama-2-7b-hf",
-            "dataset": "alpaca",
-            "input_length": "short",
-            "output_length": "short"
-        },
-        {
-            "suite_name": "suite2",
-            "batch_size": 4,
-            "model": "meta-llama/Llama-2-7b-hf",
-            "dataset": "alpaca",
-            "input_length": "short",
-            "output_length": "medium"
-        },
-        {
-            "suite_name": "suite3",
-            "batch_size": 4,
-            "model": "meta-llama/Llama-2-7b-hf",
-            "dataset": "alpaca",
-            "input_length": "short",
-            "output_length": "long"
-        },
-        {
-            "suite_name": "suite4",
-            "batch_size": 2,
-            "model": "meta-llama/Llama-2-7b-hf",
-            "dataset": "gsm8k",
-            "input_length": "medium",
-            "output_length": "medium"
-        },
-        {
-            "suite_name": "suite5",
-            "batch_size": 1,
-            "model": "meta-llama/Llama-2-7b-hf",
-            "dataset": "gsm8k",
-            "input_length": "long",
-            "output_length": "medium"
-        },
-        {
-            "suite_name": "suite6",
-            "batch_size": 1,
-            "model": "meta-llama/Llama-2-7b-hf",
-            "dataset": "alpaca",
-            "input_length": "long",
-            "output_length": "long"
-        }
-    ]
 
 def generate_controlled_suites(
     sweep_variable="input_length", 
@@ -240,10 +188,18 @@ def main():
 
 
     datasets = load_datasets()
+
     models = {
-        "meta-llama/Llama-2-7b-hf": 2048,
-        "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": 131072
+        "meta-llama/Llama-2-7b-hf": {
+            "context_window": 2048,
+            "trust_remote_code": False
+        },
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": {
+            "context_window": 131072,
+            "trust_remote_code": True
+        }
     }
+
     test_suites = {}
     CARBON_API_KEY = "2i3v14V1an95KYc0KC5w" # for machines based in North America
     # CARBON_API_KEY = "Bth2JcDfTRrujfQ81V9f" # for machines based in Europe
@@ -254,7 +210,7 @@ def main():
         "input_length": ["short", "medium", "long"],
         "output_length": ["short", "medium", "long"],
         "dataset": ["alpaca", "gsm8k"],
-        "quantization": ["fp16", "int4", "int8"],
+        "quantization": ["int4", "int8", "fp16"],
         "batch_size": [1, 2, 4],
         "model": ["deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "meta-llama/Llama-2-7b-hf"]
     }
@@ -326,7 +282,8 @@ def main():
                 model_name = suite["model"]
                 dataset_name = suite["dataset"]
                 batch_size = suite["batch_size"]
-                context_len = models[model_name]
+                context_len = models[model_name]["context_window"]
+                trust_remote_code = models[model_name]["trust_remote_code"]
                 data = datasets[dataset_name]
                 quantization = suite["quantization"]
 
@@ -336,7 +293,7 @@ def main():
                         del tokenizer
                         torch.cuda.empty_cache()
                     try:
-                        model, tokenizer = load_model(model_name, device, quantization)
+                        model, tokenizer = load_model(model_name, device, quantization, trust_remote_code)
                         previous_model_name = model_name
                         previous_quantization = quantization
                         print(f"Loaded model: {model_name} with quantization: {quantization}")
