@@ -224,7 +224,10 @@ def run_experiment(sweep_name, suite_name, model_name, context_len, tokenizer, m
         "Total Input Tokens": total_input_tokens_with_padding,
         "Total Output Tokens": total_output_tokens,
 
+<<<<<<< HEAD
         # sweep groups / variables to measure 
+=======
+>>>>>>> 8b68cd235bac111f53450dc0a9e6b0b56b0babca
         "Model": model_name,
         "Quantization": quantization,
         "Dataset": dataset_name,
@@ -309,6 +312,8 @@ def main():
 
             # table for each sweep group
             sweep_table = wandb.Table(columns=metrics_to_log + [sweep_titles[sweep_name]], data=[])
+
+
 
             run = wandb.init(
                 project="llm-inference-energy-benchmarking",
