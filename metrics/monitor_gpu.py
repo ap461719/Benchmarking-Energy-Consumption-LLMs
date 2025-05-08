@@ -20,7 +20,7 @@ import subprocess
 import os
 
 
-def start_power_monitor(filename="logs/gpu_power_log.csv", interval=1):
+def start_power_monitor(filename="results/gpu_power_log.csv", interval=1):
     """
     Start a background power monitoring process using `nvidia-smi`.
 
