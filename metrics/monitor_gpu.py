@@ -6,6 +6,9 @@ This module provides a simple interface for monitoring GPU power usage using `nv
 It uses subprocess to continuously log GPU power draw, utilization, and memory usage 
 at a fixed sampling interval. The output is saved to a CSV file for postprocessing.
 
+Although the module is not part of the experiment pipeline itself, users can choose to 
+integrate it to monitor power and memory metrics using nvidia-smi.
+
 Functions:
 - start_power_monitor: Launch a background `nvidia-smi` process to log power metrics.
 - stop_power_monitor: Cleanly terminate the logging process and close the file.

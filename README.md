@@ -1,5 +1,5 @@
 # Benchmarking Energy Consumption for LLM Inference Across Diverse Workloads
-*Group Members: Sri Iyengar, Anushka Pachary, Radhika Patel*
+*Group Members: Sri Iyengar, Anushka Pachary, Radhika Patel*  
 *Mentored by: Jishan Desai, Rakene Chowdhary*
 
 ---
@@ -115,7 +115,10 @@ See utils/data.py for how these are preprocessed and sampled.
 ├── .gitignore
 ├── README.md
 └── requirements.txt         # Python package dependencies
+
 ```
+
+The files monitor_gpu.py, parse_power_log.py, and plot_results.py were developed during early stages of the project for GPU monitoring and visualization using nvidia-smi. While not part of the current Zeus-based pipeline, they remain fully functional. Users may optionally reintegrate them for custom logging or offline analysis.
 
 ### Future Work:
 

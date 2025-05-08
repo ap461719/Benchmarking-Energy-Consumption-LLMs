@@ -8,6 +8,9 @@ The expected input is a CSV file containing timestamped GPU metrics, including
 power draw, utilization, and memory usage. The file is assumed to be logged at
 1-second intervals.
 
+Although the module is not part of the experiment pipeline itself, users can choose to 
+integrate it to log power and memory metrics using nvidia-smi.
+
 Function:
 - parse_power_log: Parses the power log CSV and returns estimated energy
                    consumption (in joules) and average power draw (in watts).
