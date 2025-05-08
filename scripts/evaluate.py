@@ -220,11 +220,11 @@ def run_experiment(sweep_name, suite_name, model_name, context_len, tokenizer, m
         "Power (W)": power,
         "Energy Per Input Token": energy_per_input_token,
         "Energy Per Outout Token": energy_per_output_token,
-        "Carbon (CO2)": total_carbon,
+        "Carbon (gCO2eq)": total_carbon,
         "Total Input Tokens": total_input_tokens_with_padding,
         "Total Output Tokens": total_output_tokens,
 
-        "Model Name": model_name,
+        "Model": model_name,
         "Quantization": quantization,
         "Dataset": dataset_name,
         "Batch Size": batch_size,
@@ -244,17 +244,17 @@ def main():
         "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": 131072
     }
     test_suites = {}
-    # CARBON_API_KEY = "2i3v14V1an95KYc0KC5w"
-    CARBON_API_KEY = "Bth2JcDfTRrujfQ81V9f"
+    CARBON_API_KEY = "2i3v14V1an95KYc0KC5w" # for machines based in North America
+    # CARBON_API_KEY = "Bth2JcDfTRrujfQ81V9f" # for machines based in Europe
     # CARBON_API_KEY = os.getenv("CARBON_API_KEY")
     carbon_intensity = get_carbon_intensity(CARBON_API_KEY)
 
     sweep_config = {
-        # "input_length": ["short", "medium", "long"],
-        # "output_length": ["short", "medium", "long"],
-        # "dataset": ["alpaca", "gsm8k"],
-        # "quantization": ["fp16", "int4", "int8"],
-        # "batch_size": [1, 2, 4],
+        "input_length": ["short", "medium", "long"],
+        "output_length": ["short", "medium", "long"],
+        "dataset": ["alpaca", "gsm8k"],
+        "quantization": ["fp16", "int4", "int8"],
+        "batch_size": [1, 2, 4],
         "model": ["deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "meta-llama/Llama-2-7b-hf"]
     }
     
@@ -264,10 +264,12 @@ def main():
         "dataset": "Dataset",
         "quantization": "Quantization",
         "batch_size": "Batch Size",
-        "model": "Model Name"
+        "model": "Model"
     }
 
-    metrics_to_log = ["Latency", "Memory (MB)", "Energy (J)", "Power (W)", "Energy per Input Token", "Energy per Output Token", "Carbon (gCO2eq)", "Total Input Tokens", "Total Output Tokens"]
+    metrics_to_log = ["Latency", "Memory (MB)", "Energy (J)", "Power (W)", "Energy per Input Token", 
+                      "Energy per Output Token", "Carbon (gCO2eq)", "Total Input Tokens", "Total Output Tokens"]
+
 
     for sweep_variable, sweep_values in sweep_config.items():
         test_suites[sweep_variable] = []
@@ -276,43 +278,6 @@ def main():
                 sweep_variable=sweep_variable,
                 sweep_values=[sweep_val],
             )
-
-    # # add suites of tests to vary input length
-    # test_suites += generate_controlled_suites(
-    #     sweep_variable="input_length",
-    #     sweep_values=["short", "medium", "long"],
-    # )
-
-    # # add suites of tests to vary output length
-    # test_suites += generate_controlled_suites(
-    #     sweep_variable="output_length",
-    #     sweep_values=["short", "medium", "long"]
-    # )
-
-    # # add suites of tests to vary dataset
-    # test_suites += generate_controlled_suites(
-    #     sweep_variable="dataset",
-    #     sweep_values=["alpaca", "gsm8k"]
-    # )
-
-    # # add suites of tests to vary quantization level
-    # # TODO add support for fp 32 by using A100 GPU
-    # test_suites += generate_controlled_suites(
-    #     sweep_variable="quantization",
-    #     sweep_values=[ "bfp16", "int4", "int8", "fp16"]
-    # )
-
-    # # add suites of tests to vary batch size
-    # test_suites += generate_controlled_suites(
-    #     sweep_variable="batch_size",
-    #     sweep_values=[1, 2, 4]
-    # )
-
-    # # add suites of tests to vary model
-    # test_suites += generate_controlled_suites(
-    #     sweep_variable="model",
-    #     sweep_values=["deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "meta-llama/Llama-2-7b-hf"]
-    # )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -342,6 +307,8 @@ def main():
             print(f"=======================================\n")
 
             sweep_table = wandb.Table(columns=metrics_to_log + [sweep_titles[sweep_name]], data=[])
+
+
 
             run = wandb.init(
                 project="llm-inference-energy-benchmarking",
@@ -394,7 +361,7 @@ def main():
                         result["Power (W)"],
                         result["Energy Per Input Token"],
                         result["Energy Per Outout Token"],
-                        result["Carbon (CO2)"],
+                        result["Carbon (gCO2eq)"],
                         result["Total Input Tokens"],
                         result["Total Output Tokens"],
 
@@ -411,9 +378,14 @@ def main():
                 print(f"Finished running {suite['suite_name']} ...")
             
             for metric in metrics_to_log:
+                plot_key = f"{sweep_titles[sweep_name]} vs {metric}"
+
                 wandb.log({
-                        f"{sweep_titles[sweep_name].title()} Sweep Table": wandb.plot.bar(
-                                sweep_table, sweep_titles[sweep_name], metric, title=f"{sweep_titles[sweep_name]} vs {metric}"
+                        plot_key: wandb.plot.bar(
+                                sweep_table, 
+                                sweep_titles[sweep_name], 
+                                metric, 
+                                title=f"{sweep_titles[sweep_name]} vs {metric}", 
                             )
                     })
 
