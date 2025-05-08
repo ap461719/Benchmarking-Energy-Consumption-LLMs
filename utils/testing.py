@@ -1,0 +1,154 @@
+from utils.data import build_prompt
+import torch
+from zeus.monitor import ZeusMonitor
+from utils.carbon_utils import joules_to_carbon
+import time
+
+def run_experiment(sweep_name, suite_name, model_name, context_len, tokenizer, model, dataset_name, data, length_label, prompt_len, gen_tokens, batch_size, quantization, device, writer, carbon_intensity, wandb_run):
+    
+    total_energy = 0
+    total_latency = 0
+    total_carbon = 0
+
+    total_input_tokens_with_padding = 0
+    total_output_tokens = 0
+
+    num_samples_to_execute = 32
+
+    print(f"\nRunning: {sweep_name} | {suite_name} | {model_name} | {quantization} | {dataset_name} | {length_label} | {batch_size}")
+
+    for i in range(0, num_samples_to_execute, batch_size):
+        batch = data[i:i+batch_size]
+        batch_number = i//batch_size + 1
+
+        print(f"Batch {batch_number} of {num_samples_to_execute//batch_size}...")
+
+        prompts = [build_prompt(s, dataset_name) for s in batch]
+
+        if not any(prompts):
+            continue
+
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+
+        zeus_monitor = ZeusMonitor(approx_instant_energy=True, gpu_indices=[torch.cuda.current_device()])
+        zeus_monitor.begin_window("inference")
+
+        inputs = tokenizer(
+            prompts,
+            return_tensors="pt",
+            padding='max_length',
+            truncation=True,
+            max_length=prompt_len
+        ).to(device)
+
+        input_token_lens = [len(seq) for seq in inputs["input_ids"]] # len(seq) == prompt_len for each seq
+
+        if any(in_len + gen_tokens > context_len for in_len in input_token_lens):
+            print(f"Skipping batch {i//batch_size + 1} due to context length limit.")
+            print("max context length: ", context_len)
+            print("input token lengths: ", input_token_lens)
+            print("gen tokens: ", gen_tokens)
+            continue
+
+        if (torch.isnan(inputs["input_ids"]).any() or
+            torch.isinf(inputs["input_ids"]).any() or
+            (inputs["input_ids"] < 0).any()):
+            continue
+
+        start = time.time()
+        with torch.no_grad():
+            output = model.generate(**inputs, max_new_tokens=gen_tokens, min_new_tokens=gen_tokens)
+        end = time.time()
+
+        measurement = zeus_monitor.end_window("inference")
+        latency = end - start
+        total_latency += round(latency, 4)
+        torch.cuda.synchronize()
+
+        # update total energy consumption
+        energy = round(measurement.total_energy, 2)
+        total_energy += energy
+
+        # update total carbon emissions
+        pad_token_id = tokenizer.pad_token_id or tokenizer.eos_token_id
+        num_input_tokens = (inputs["input_ids"] != pad_token_id).sum().item()
+        input_lengths_batch = [len(x) for x in inputs["input_ids"]]
+        output_lengths_batch = [len(seq) - in_len for seq, in_len in zip(output, input_lengths_batch)]
+        
+        # input and output token counts
+        num_output_tokens = sum(output_lengths_batch)  
+        num_input_tokens_with_padding = inputs["input_ids"].numel()     
+        total_input_tokens_with_padding += num_input_tokens_with_padding 
+        total_output_tokens += num_output_tokens
+
+        # input tokens without padding - not required for now
+        #input_token_counts = (inputs["input_ids"] != pad_token_id).sum(dim=1).tolist()
+        
+        # carbon emissions calculation
+        carbon_emissions = joules_to_carbon(energy, carbon_intensity)
+        total_carbon = round(total_carbon+ carbon_emissions, 4)
+
+    # get power, energy per input token, and evergy per output token
+    power = round(total_energy / total_latency, 4) if total_latency > 0 else 0
+    energy_per_input_token = round(total_energy / total_input_tokens_with_padding, 4) if total_input_tokens_with_padding > 0 else 0.0
+    energy_per_output_token = round(total_energy / total_output_tokens, 4) if total_output_tokens > 0 else 0.0
+            
+    # what was the maximim memory used during the run?
+    max_memory = round(torch.cuda.max_memory_allocated() / 1e6, 4)
+    torch.cuda.reset_peak_memory_stats()
+
+    writer.writerow([
+        model_name, quantization, context_len, dataset_name, batch_size,
+        total_latency, max_memory, total_energy, power,
+        total_input_tokens_with_padding, total_output_tokens,
+        energy_per_input_token, energy_per_output_token, total_carbon
+    ])
+    
+    print(f"\n\n=======================================")
+    print(f"Done | Total Latency: {total_latency:.2f}s | Max Memory Footprint: {max_memory:.0f}MB | "
+            f"Energy: {total_energy}J | Carbon: {total_carbon}gCO2eq | "
+            f"Per-Token Energy (in/out): {energy_per_input_token}/{energy_per_output_token} J")
+
+    return {
+        "Latency": total_latency,
+        "Memory (MB)": max_memory,
+        "Energy (J)": total_energy,
+        "Power (W)": power,
+        "Energy Per Input Token": energy_per_input_token,
+        "Energy Per Outout Token": energy_per_output_token,
+        "Carbon (gCO2eq)": total_carbon,
+        "Total Input Tokens": total_input_tokens_with_padding,
+        "Total Output Tokens": total_output_tokens,
+
+        # sweep groups / variables to measure 
+        "Model": model_name,
+        "Quantization": quantization,
+        "Dataset": dataset_name,
+        "Batch Size": batch_size,
+        "Input Length (Tokens)": prompt_len,
+        "Output Length (Tokens)": gen_tokens,
+    }
+
+def generate_controlled_suites(
+    sweep_variable="input_length", 
+    sweep_values=["short", "medium", "long"],
+    fixed_values=None
+):
+    if fixed_values is None:
+        fixed_values = {
+            "model": "meta-llama/Llama-2-7b-hf",
+            "dataset": "alpaca",
+            "batch_size": 4,
+            "input_length": "short",
+            "output_length": "medium",
+            "quantization": "fp16"
+        }
+
+    suites = []
+    for val in sweep_values:
+        suite = fixed_values.copy()
+        suite[sweep_variable] = val
+        suite["suite_name"] = f"sweep_{sweep_variable}_{val}"
+        suites.append(suite)
+    return suites
