@@ -67,6 +67,14 @@ NEED TO FILL OUT:
 | Carbon Footprint   | XX s        |
 | Device                | A100, Jetson Nano, M1 Pro, etc. |
 
+#### Sample Results
+
+These imagse represent a very small subset of results we have generated through our experiments: 
+
+![Batch Size vs Energy (J)](results/batchsize-energy.png)
+![Input Length vs Carbon Emission (gCO2eq)](results/inputlength-carbon.png)
+![Quantization vs Energy)](results/quantization-energy.png)
+![Batch Size Table](results/batch-size-table.png)
 
 ---
 
@@ -104,6 +112,7 @@ The main entry point is scripts/evaluate.py, which:
     - model: Llama-7b, Deepseek-R1-Distill-Qwen-7B
 
 - Logs metrics to visual plots in W&B
+
 
 ### D. Run Benchmark
 
@@ -214,16 +223,6 @@ The files monitor_gpu.py, parse_power_log.py, and plot_results.py were developed
     - carbon_utils.py: Fetches real-time carbon intensity via Electricity Maps API and computes carbon emissions from energy use in grams CO₂-equivalent.
 
 - wandb/: directory gets generated during experiment runtime, contains logs metrics for each experiment and metadata
-
-
-### D. Sample Results
-
-These imagse represent a very small subset of results we have generated through our experiments: 
-
-![Batch Size vs Energy (J)](results/batchsize-energy.png)
-![Input Length vs Carbon Emission (gCO2eq)](results/inputlength-carbon.png)
-![Quantization vs Energy)](results/quantization-energy.png)
-![Batch Size Table](results/batch-size-table.png)
 
 ### E. Future Work:
 
