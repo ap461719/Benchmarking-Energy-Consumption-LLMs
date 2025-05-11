@@ -1,39 +1,80 @@
-# Benchmarking Energy Consumption for LLM Inference Across Diverse Workloads
+# HPML Project: Benchmarking Energy Consumption for LLM Inference Across Diverse Workloads
 *Group Members: Sri Iyengar, Anushka Pachary, Radhika Patel*  
 *Mentored by: Jishan Desai, Rakene Chowdhury*
 
+## Team Information
+- **Team Name**: Project 7: Benchmarking-LLMs
+- **Members**:
+  - Sri Iyengar (si2468)
+  - Anushka Pachaury (ap4617)
+  - Radhika Patel (rpp2142)
+- **Mentors**:
+  - Jishan Desai
+  - Rakene Chowdhury
+
 ---
 
-## 📋 Overview
-
-This project provides a standardized benchmarking suite to evaluate the energy efficiency of Large Language Models (LLMs) during inference. By systematically varying inference workloads—particularly **input length, output length, quantization type, batch size and dataset**, we measure their impact on: 
-- latency (sec)
-- Max GPU Memory Usage (MB)
-- Total Energy Consumption (Joules)
-- Carbon Footprint (gCO₂eq)
-- Energy per input/output token
-
-across **different models**. 
-
-The benchmarking pipeline is implemented using Hugging Face Transformers, bitsandbytes for quantization, Zeus for power profiling. Metrics are visualized and tracked via Weights & Biases (W&B) and optionally logged into csv files locally. 
-
-### Motivation
+## 1. Problem Statement 
 
 LLMs like LLaMA-2 and DeepSeek require significant energy for inference. However, few tools exist to rigorously benchmark and compare their energy profiles across realistic workloads (and configurations).
 
-This project builds a reproducible pipeline to:
-- Run controlled inference experiments across models, datasets, and quantization levels.
-- Monitor real-time GPU power usage and calculate associated energy and carbon footprint.
-- Log detailed metrics (latency, memory, energy per token, carbon impact).
+This project provides a reproducable benchmarking pipeline to evaluate the energy efficiency of Large Language Models (LLMs) during inference by:
+- Running controlled inference experiments across models, datasets, and quantization levels.
+- Monitoring real-time GPU power usage and calculate associated energy and carbon footprint.
+- Logging detailed metrics by systematically varying inference workloads—particularly **input length, output length, quantization type, batch size and dataset** to measure their impact on 
+    - latency (sec)
+    - Max GPU Memory Usage (MB)
+    - Total Energy Consumption (Joules)
+    - Carbon Footprint (gCO₂eq)
+    - Energy per input/output token
+
+    across **different models**. 
+
 - Visualize performance across sweeping variables like input/ouput size, model type, dataset type, batch size.
 
---- 
+The benchmarking suite is implemented using Hugging Face Transformers, bitsandbytes for quantization, Zeus for power profiling. Metrics are visualized and tracked via Weights & Biases (W&B) and optionally logged into csv files locally. 
 
-### Installation 
+---
+## 2. Model Description
 
-We recommend setting up a virtual environment before installing dependencies:
+We benchmark two open-source transformer-based LLMs:
 
-```
+- meta-llama/LLaMA-2-7B: A 32-layer transformer using learned positional embeddings and a 32K-token SentencePiece tokenizer.
+
+- deepseek-ai/DeepSeek-R1-Distill-Qwen-7B: A distilled GPT-style model with 28 layers, RoPE positional encoding, and a large 151K-token tokenizer.
+
+Frameworks:
+
+- PyTorch (Transformers via Hugging Face)
+
+- BitsAndBytes for post-training, weight-only quantization (int4/int8)
+
+- Zeus for energy and power profiling
+
+There are no custom layers, but models are loaded with quantized configurations (fp16, int8, int4), and inference is run using controlled, batched prompts for one of the experiment sweeps. 
+
+---
+## 3. Final Results Summary
+
+NEED TO FILL OUT: 
+
+| Metric                |  Value       |
+|---------------------- |-------------|
+| Most efficient config | LLaMA-2 w/ batch size 4, fp16 |
+| Latency (Batch=4, fp16)    | XX.XX ms    |
+| Energy Consumption            | XX MB       |
+| Energy Consumption | XX MB       |
+| Carbon Footprint   | XX s        |
+| Device                | A100, Jetson Nano, M1 Pro, etc. |
+
+
+---
+
+## 4. Reproducibility Instructions
+
+### A. Requirements
+Create a virtual environment and install dependencies:
+```bash
 python -m venv venv
 source venv/bin/activate       # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
@@ -41,7 +82,13 @@ pip install -r requirements.txt
 Make sure nvidia-smi and GPU drivers are properly installed if running on an NVIDIA system.
 
 
-### How To Benchmark
+### B. Wandb Dashboard 
+
+All visualizations and tables can be viewed on using our [Wandb dashboard](https://wandb.ai/benchmarking-energy-consumption-llms-inference/llm-inference-energy-benchmarking/?nw=nwuserrpp2142). 
+
+The dashboard is divided into panels - each illustrating the impacts of each variable/configuration for a given energy consumption metric (energy, latency). It represents how different variables (batch size, quantization, etc.) affect a particular metric we are trying to benchmark (for eg., carbon emissions). The TABLES panel presents the data captured across each sweep for all metrics. The Runs Panel allows the viewer to capture the visualizations based on each variable (for eg, how does batch size impact latency, energy, power, etc)
+
+### C. Inference-Only Benchmarking
 
 The main entry point is scripts/evaluate.py, which:
 
@@ -58,13 +105,39 @@ The main entry point is scripts/evaluate.py, which:
 
 - Logs metrics to visual plots in W&B
 
-### Run Benchmark
+### D. Run Benchmark
+
+To run our benchmarking script use the following command: 
 ```
 python scripts/evaluate.py
 ```
+
+### E. Quickstart: Minimum Reproducible Result
+
+```python
+# from scripts/evaluate.py: 
+sweep_config = {
+    "input_length": ["short", "medium", "long"],
+    "output_length": ["short", "medium", "long"],
+    "dataset": ["alpaca", "gsm8k"],
+    "quantization": ["int4", "int8", "fp16"],
+    "batch_size": [1, 2, 4],
+    "model": ["deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "meta-llama/Llama-2-7b-hf"]
+}
+```
+Comment out any set of sweep suites experiments ('sweep-name':[sweep-configs]) and run 
+
+```
+python scripts/evaluate.py
+```
+
+The runs results for the entire experiment will be directly logged into wandb and can be viewed from there directly. The terminal should print out corresponding results and metrics caculated as well. A single sweep will provide answer "how does the sweep_variable affect the various energy benchmarking metrics (carbon, energy, etc..). 
+
 ---
 
-### Power Monitoring Tools
+## 5. Other Notes
+
+### A. Power Monitoring Tools
 This project supports two power monitoring backends:
 
 1. Zeus (default): Used live inside evaluate.py and testing.py.
@@ -74,7 +147,7 @@ This project supports two power monitoring backends:
 The file carbon_utils.py uses real-time carbon intensity data via the [Electricity Maps API](https://portal.electricitymaps.com/docs/getting-started#authorization).
 
 
-### Datasets
+### B. Datasets
 
 We use two open-source datasets for prompting:
 
@@ -84,9 +157,7 @@ We use two open-source datasets for prompting:
 
 See utils/data.py for how these are preprocessed and sampled.
 
----
-
-### Directory Structure
+### C. Directory Structure
 
 ```
 ├── metrics/                 # Energy and power monitoring utilities
@@ -120,7 +191,7 @@ See utils/data.py for how these are preprocessed and sampled.
 
 The files monitor_gpu.py, parse_power_log.py, and plot_results.py were developed during early stages of the project for GPU monitoring and visualization using nvidia-smi. While not part of the current Zeus-based pipeline, they remain fully functional. Users may optionally reintegrate them for custom logging or offline analysis.
 
-### File Descriptions
+#### File Descriptions
 
 - metrics
     - zeusml.py: Wrapper class around Zeus energy monitor for starting/stopping energy tracking, reporting, saving CSVs, and optionally plotting power traces
@@ -145,7 +216,7 @@ The files monitor_gpu.py, parse_power_log.py, and plot_results.py were developed
 - wandb/: directory gets generated during experiment runtime, contains logs metrics for each experiment and metadata
 
 
-### Sample Results
+### D. Sample Results
 
 These imagse represent a very small subset of results we have generated through our experiments: 
 
@@ -154,13 +225,7 @@ These imagse represent a very small subset of results we have generated through 
 ![Quantization vs Energy)](results/quantization-energy.png)
 ![Batch Size Table](results/batch-size-table.png)
 
-### Wandb
-
-All visualizations and tables can be viewed on using our [Wandb dashboard](https://wandb.ai/benchmarking-energy-consumption-llms-inference/llm-inference-energy-benchmarking/?nw=nwuserrpp2142). 
-
-The dashboard is divided into panels - each illustrating the impacts of each variable/configuration for a given energy consumption metric (energy, latency). It represents how different variables (batch size, quantization, etc.) affect a particular metric we are trying to benchmark (for eg., carbon emissions). The TABLES panel presents the data captured across each sweep for all metrics. The Runs Panel allows the viewer to capture the visualizations based on each variable (for eg, how does batch size impact latency, energy, power, etc)
-
-### Future Work:
+### E. Future Work:
 
 - Increase memory to try baseline fp32 quantization level 
 - Benchmarking across multiple hardware configurations
