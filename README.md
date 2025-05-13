@@ -62,7 +62,7 @@ Most notable results:
 |---------------------- |-------------|
 | Batch Size | Decreased Energy, Latency, Carbon 45% from (1-2) then 45% (2-4)|
 | Quantization | Increased Energy and Carbon Metrics 1.4x for int8, 2x for int4 from f16 baseline  |
-| Energy per Input Token     | Energy Consumption Decreases 70% (128-512) tokens, 40% (512 -1024)|
+| Token length    | Energy per input token Decreases 70% (128-512 tokens), 40% (512 - 1024 tokens)|
 
 #### Sample Results
 
