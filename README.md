@@ -56,16 +56,13 @@ There are no custom layers, but models are loaded with quantized configurations 
 ---
 ## 3. Final Results Summary
 
-NEED TO FILL OUT: 
+Most notable results: 
 
-| Metric                |  Value       |
+| Variable                |  Impact       |
 |---------------------- |-------------|
-| Most efficient config | LLaMA-2 w/ batch size 4, fp16 |
-| Latency (Batch=4, fp16)    | XX.XX ms    |
-| Energy Consumption            | XX MB       |
-| Energy Consumption | XX MB       |
-| Carbon Footprint   | XX s        |
-| Device                | A100, Jetson Nano, M1 Pro, etc. |
+| Batch Size | Decreased Energy, Latency, Carbon 45% from (1-2) then 45% (2-4)|
+| Quantization | Increased Energy and Carbon Metrics 1.4x for int8, 2x for int4 from f16 baseline  |
+| Energy per Input Token     | Energy Consumption Decreases 70% (128-512) tokens, 40% (512 -1024)|
 
 #### Sample Results
 
