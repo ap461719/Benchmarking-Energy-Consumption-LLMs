@@ -54,11 +54,10 @@ def main():
     test_suites = {}
 
     # Use the appropriate carbon intensity API key based on your region
-    CARBON_API_KEY = "2i3v14V1an95KYc0KC5w"  # North America
+    CARBON_API_KEY = "Bth2JcDfTRrujfQ81V9f"  # North America
     carbon_intensity = get_carbon_intensity(CARBON_API_KEY)
 
     # Define which parameter(s) to sweep
-
     sweep_config = {
         "input_length": ["short", "medium", "long"],
         "output_length": ["short", "medium", "long"],
@@ -68,22 +67,6 @@ def main():
         "model": ["deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "meta-llama/Llama-2-7b-hf"]
     }
     
-    sweep_titles = {
-        "input_length": "Input Length (Tokens)",
-        "output_length": "Output Length (Tokens)",
-        "dataset": "Dataset",
-        "quantization": "Quantization",
-        "batch_size": "Batch Size",
-        "model": "Model"
-    }
-
-    # Define which metrics to log to W&B
-    metrics_to_log = [
-        "Latency", "Memory (MB)", "Energy (J)", "Power (W)",
-        "Energy per Input Token", "Energy per Output Token",
-        "Carbon (gCO2eq)", "Total Input Tokens", "Total Output Tokens"
-    ]
-
     # Generate test suites for each sweep variable
     for sweep_variable, sweep_values in sweep_config.items():
         test_suites[sweep_variable] = []
@@ -94,7 +77,7 @@ def main():
             )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+ 
     previous_model_name = None
     model = None
     tokenizer = None
@@ -114,27 +97,13 @@ def main():
         print("Starting experiments...")
         print("++++++++++++++++++++++++++++++++\n")
 
-        for sweep_name, test_suites in test_suites.items():
+        for sweep_name, suites in test_suites.items():
             print(f"\n\n=======================================")
             print(f"Running sweep: {sweep_name} ...")
-            print(f"Number of test suites: {len(test_suites)}")
+            print(f"Number of test suites for {sweep_name}: {len(suites)}")
             print(f"=======================================\n")
 
-            # Initialize a W&B table to hold sweep results
-            sweep_table = wandb.Table(columns=metrics_to_log + [sweep_titles[sweep_name]], data=[])
-
-            # Start a new W&B run for this sweep
-            run = wandb.init(
-                project="llm-inference-energy-benchmarking",
-                name=re.sub(r"(?:^|_)(\w)", lambda m: (" " if m.start() != 0 else "") + m.group(1).upper(), sweep_name),
-                reinit=True,
-                config={
-                    "device": torch.cuda.get_device_name(torch.cuda.current_device()),
-                    "gpu_memory_total_gb": torch.cuda.get_device_properties(0).total_memory / 1e9, 
-                }
-            )
-
-            for suite in test_suites:
+            for suite in suites:
                 model_name = suite["model"]
                 dataset_name = suite["dataset"]
                 batch_size = suite["batch_size"]
@@ -175,39 +144,12 @@ def main():
                         device, writer, carbon_intensity
                     )
 
-                    # Log results to the W&B table
-                    sweep_table.add_data(
-                        result["Latency"],
-                        result["Memory (MB)"],
-                        result["Energy (J)"],
-                        result["Power (W)"],
-                        result["Energy Per Input Token"],
-                        result["Energy Per Outout Token"],
-                        result["Carbon (gCO2eq)"],
-                        result["Total Input Tokens"],
-                        result["Total Output Tokens"],
-                        result[sweep_titles[sweep_name]],
-                    )
-
                 except Exception as e:
                     print(f"Experiment error: {e}")
                     continue
 
                 print(f"Finished running {suite['suite_name']} ...")
 
-            # Log plots to W&B for each metric
-            for metric in metrics_to_log:
-                plot_key = f"{sweep_titles[sweep_name]} vs {metric}"
-                wandb.log({
-                    plot_key: wandb.plot.bar(
-                        sweep_table,
-                        sweep_titles[sweep_name],
-                        metric,
-                        title=f"{sweep_titles[sweep_name]} vs {metric}"
-                    )
-                })
-
-            wandb.finish()
 
             print("\n\n=======================================")
             print(f"Finished sweep: {sweep_name} ...")
