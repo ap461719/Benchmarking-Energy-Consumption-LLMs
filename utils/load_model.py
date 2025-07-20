@@ -17,60 +17,45 @@ Example usage:
     )
 """
 
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer, BitsAndBytesConfig, AutoModelForQuestionAnswering
 import torch
+import deepspeed
+
+def is_qa_model(model_name):
+    return "pruneofa" in model_name.lower() or "questionanswering" in model_name.lower()
+
+def is_seq2seq_model(model_name):
+    return "switch" in model_name.lower()
 
 def load_model(model_name, device, quantization=None, trust_remote_code=False):
-    """
-    Load a Hugging Face causal language model and tokenizer with optional quantization.
-
-    This function supports loading standard and custom model architectures using
-    trusted remote code execution when required (e.g., for DeepSeek). It also supports
-    model loading with 8-bit and 4-bit quantization via BitsAndBytes.
-
-    Args:
-        model_name (str): Hugging Face model identifier or path to local model.
-        device (str): Device string (e.g., 'cuda', 'cpu') to which the model should be moved.
-        quantization (str, optional): One of {'fp32', 'fp16', 'bfp16', 'int8', 'int4'}.
-                                      Defaults to None, which uses fp32.
-        trust_remote_code (bool, optional): Whether to allow execution of remote custom model code.
-                                            Must be True for some models like DeepSeek.
-
-    Returns:
-        model (AutoModelForCausalLM): Loaded language model.
-        tokenizer (AutoTokenizer): Corresponding tokenizer with EOS as padding token.
-
-    Raises:
-        ValueError: If an unsupported quantization option is provided.
-    """
-
-    # Load tokenizer with optional remote code trust
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=trust_remote_code)
-    tokenizer.pad_token = tokenizer.eos_token  # Ensures compatibility with left-padded inputs
+    tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"
 
-    # Load model according to quantization type
+    ModelClass = AutoModelForSeq2SeqLM if is_seq2seq_model(model_name) else AutoModelForCausalLM
+
+    # Load model based on quantization
     if quantization is None or quantization == "fp32":
-        model = AutoModelForCausalLM.from_pretrained(
+        model = ModelClass.from_pretrained(
             model_name, trust_remote_code=trust_remote_code, torch_dtype=torch.float32
         )
         model.to(device)
 
     elif quantization == "fp16":
-        model = AutoModelForCausalLM.from_pretrained(
+        model = ModelClass.from_pretrained(
             model_name, trust_remote_code=trust_remote_code, torch_dtype=torch.float16
         )
         model.to(device)
 
     elif quantization == "bfp16":
-        model = AutoModelForCausalLM.from_pretrained(
+        model = ModelClass.from_pretrained(
             model_name, trust_remote_code=trust_remote_code, torch_dtype=torch.bfloat16
         )
         model.to(device)
 
     elif quantization == "int8":
         bnb_config = BitsAndBytesConfig(load_in_8bit=True)
-        model = AutoModelForCausalLM.from_pretrained(
+        model = ModelClass.from_pretrained(
             model_name, trust_remote_code=trust_remote_code,
             quantization_config=bnb_config, device_map={"": device}
         )
@@ -78,17 +63,28 @@ def load_model(model_name, device, quantization=None, trust_remote_code=False):
     elif quantization == "int4":
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",              # NormalFloat4 quantization
-            bnb_4bit_use_double_quant=False,         # Enables nested quantization
-            bnb_4bit_compute_dtype=torch.float16    # Use float16 for matmuls
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=False,
+            bnb_4bit_compute_dtype=torch.float16
         )
-        model = AutoModelForCausalLM.from_pretrained(
+        model = ModelClass.from_pretrained(
             model_name, trust_remote_code=trust_remote_code,
             quantization_config=bnb_config, device_map={"": device}
         )
 
     else:
         raise ValueError(f"Unsupported quantization type: {quantization}")
+
+    # ✅ DeepSpeed MoE Inference Wrapping (only for Switch models + float precision)
+    if is_seq2seq_model(model_name) and quantization in ["fp32", "fp16", None]:
+        print("Wrapping Switch Transformer with DeepSpeed inference engine...")
+        model = deepspeed.init_inference(
+            model,
+            mp_size=1,
+            dtype=torch.float16 if quantization == "fp16" else torch.float32,
+            replace_method="auto",
+            replace_with_kernel_inject=True
+        )
 
     print(f"{model_name} loaded on {device} with quantization: {quantization}")
     return model, tokenizer

@@ -48,6 +48,11 @@ def main():
         "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": {
             "context_window": 131072,
             "trust_remote_code": True
+        },
+         "google/switch-base-8": {
+        "context_window": 2048,
+        "trust_remote_code": True,
+        "is_seq2seq": True
         }
     }
 
@@ -55,16 +60,19 @@ def main():
 
     # Use the appropriate carbon intensity API key based on your region
     CARBON_API_KEY = "Bth2JcDfTRrujfQ81V9f"  # North America
-    carbon_intensity = get_carbon_intensity(CARBON_API_KEY)
+    #carbon_intensity = get_carbon_intensity(CARBON_API_KEY)
+    carbon_intensity = 1
+    
 
     # Define which parameter(s) to sweep
     sweep_config = {
-        "input_length": ["short", "medium", "long"],
-        "output_length": ["short", "medium", "long"],
-        "dataset": ["alpaca", "gsm8k"],
-        "quantization": ["int4", "int8", "fp16"],
-        "batch_size": [1, 2, 4],
-        "model": ["deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "meta-llama/Llama-2-7b-hf"]
+        #"input_length": ["short", "medium", "long"],
+       # "output_length": ["short", "medium", "long"],
+        #"dataset": ["alpaca", "gsm8k"],
+        #"quantization": ["int4", "int8", "fp16"],
+       # "batch_size": [1, 2, 4],
+       # "model": ["deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "meta-llama/Llama-2-7b-hf", "google/switch-base-8"]
+        "model": ["google/switch-base-8"]
     }
     
     # Generate test suites for each sweep variable
@@ -136,12 +144,12 @@ def main():
 
                 try:
                     test_name = f"input{prompt_len}_output{gen_tokens}"
-
+                    is_seq2seq = models[model_name].get("is_seq2seq", False)
                     result = run_experiment(
                         sweep_name, suite['suite_name'], model_name, context_len,
                         tokenizer, model, dataset_name, data, test_name,
                         prompt_len, gen_tokens, batch_size, quantization,
-                        device, writer, carbon_intensity
+                        device, writer, carbon_intensity, is_seq2seq=is_seq2seq
                     )
 
                 except Exception as e:

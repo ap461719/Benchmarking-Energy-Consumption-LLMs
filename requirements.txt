@@ -105,3 +105,4 @@ zeus-ml==0.11.0.post1
 torch
 torchvision
 torchaudio
+deepspeed 

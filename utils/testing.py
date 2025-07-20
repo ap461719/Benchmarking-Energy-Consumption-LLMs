@@ -38,6 +38,7 @@ def run_experiment(
     device,
     writer,
     carbon_intensity,
+    is_seq2seq=False
 ):
     """
     Run a single benchmarking experiment on a given model and dataset.
@@ -116,7 +117,19 @@ def run_experiment(
 
         start = time.time()
         with torch.no_grad():
-            output = model.generate(**inputs, max_new_tokens=gen_tokens, min_new_tokens=gen_tokens)
+            if is_seq2seq:
+                output = model.generate(
+                    input_ids=inputs["input_ids"],
+                    attention_mask=inputs["attention_mask"],
+                    max_new_tokens=gen_tokens,
+                    min_new_tokens=gen_tokens
+                )
+            else:
+                output = model.generate(
+                    **inputs,
+                    max_new_tokens=gen_tokens,
+                    min_new_tokens=gen_tokens
+                )
         end = time.time()
 
         latency = end - start
