@@ -38,7 +38,8 @@ def run_experiment(
     device,
     writer,
     carbon_intensity,
-    is_seq2seq=False
+    is_seq2seq=False, 
+    is_qa=False
 ):
     """
     Run a single benchmarking experiment on a given model and dataset.
@@ -83,8 +84,35 @@ def run_experiment(
         batch_number = i // batch_size + 1
         print(f"Batch {batch_number} of {num_samples_to_execute // batch_size}...")
 
-        prompts = [build_prompt(s, dataset_name) for s in batch]
-        if not any(prompts):
+        if is_qa:
+            inputs = tokenizer(
+                [s["question"] for s in batch],
+                [s["context"] for s in batch],
+                return_tensors="pt",
+                padding='max_length',
+                truncation=True,
+                max_length=prompt_len
+            )
+        else:
+            prompts = [build_prompt(s, dataset_name) for s in batch]
+            if not any(prompts):
+                continue
+            input_text = tokenizer(
+                prompts, return_tensors="pt", padding="max_length",
+                truncation=True, max_length=prompt_len
+            )
+        
+        inputs = input_text.to(device)
+
+        input_lens = [seq.count_nonzero().item() for seq in inputs["input_ids"]]
+        if any(l + gen_tokens > context_len for l in input_lens):
+            print("Skipping batch: context limit exceeded.")
+            continue
+
+        if (torch.isnan(inputs["input_ids"]).any() or
+            torch.isinf(inputs["input_ids"]).any() or
+            (inputs["input_ids"] < 0).any()):
+            print("Skipping batch: invalid input.")
             continue
 
         torch.cuda.empty_cache()
@@ -93,52 +121,31 @@ def run_experiment(
         zeus_monitor = ZeusMonitor(approx_instant_energy=True, gpu_indices=[torch.cuda.current_device()])
         zeus_monitor.begin_window("inference")
 
-        inputs = tokenizer(
-            prompts,
-            return_tensors="pt",
-            padding='max_length',
-            truncation=True,
-            max_length=prompt_len
-        ).to(device)
-
-        input_token_lens = [len(seq) for seq in inputs["input_ids"]]
-
-        if any(in_len + gen_tokens > context_len for in_len in input_token_lens):
-            print(f"Skipping batch {batch_number} due to context length limit.")
-            print("max context length: ", context_len)
-            print("input token lengths: ", input_token_lens)
-            print("gen tokens: ", gen_tokens)
-            continue
-
-        if (torch.isnan(inputs["input_ids"]).any() or
-            torch.isinf(inputs["input_ids"]).any() or
-            (inputs["input_ids"] < 0).any()):
-            continue
-
         start = time.time()
         with torch.no_grad():
-            if is_seq2seq:
+            if is_qa:
+                output = model(**inputs)
+                start_pos = output.start_logits.argmax(dim=1)
+                end_pos = output.end_logits.argmax(dim=1)
+                output_lens = (end_pos - start_pos).clamp(min=1).tolist()
+            elif is_seq2seq:
                 output = model.generate(
                     input_ids=inputs["input_ids"],
                     attention_mask=inputs["attention_mask"],
-                    max_new_tokens=gen_tokens,
-                    min_new_tokens=gen_tokens
+                    max_new_tokens=gen_tokens, min_new_tokens=gen_tokens
                 )
             else:
                 output = model.generate(
                     **inputs,
-                    max_new_tokens=gen_tokens,
-                    min_new_tokens=gen_tokens
+                    max_new_tokens=gen_tokens, min_new_tokens=gen_tokens
                 )
-        end = time.time()
-
-        latency = end - start
+        latency = time.time() - start
         total_latency += round(latency, 4)
         measurement = zeus_monitor.end_window("inference")
-        torch.cuda.synchronize()
 
         energy = round(measurement.total_energy, 2)
         total_energy += energy
+        torch.cuda.synchronize()
 
         pad_token_id = tokenizer.pad_token_id or tokenizer.eos_token_id
         input_lengths_batch = [len(x) for x in inputs["input_ids"]]
@@ -211,7 +218,7 @@ def generate_controlled_suites(
             "dataset": "alpaca",
             "batch_size": 4,
             "input_length": "short",
-            "output_length": "medium",
+            "output_length": "short",           #changed this to short from medium because of the pruned models context window limit exceeded
             "quantization": "fp16"
         }
 

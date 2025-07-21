@@ -53,6 +53,11 @@ def main():
         "context_window": 2048,
         "trust_remote_code": True,
         "is_seq2seq": True
+        },
+        "Intel/bert-base-uncased-sparse-90-unstructured-pruneofa": {
+        "context_window": 512,
+        "trust_remote_code": False,
+        "is_qa": False
         }
     }
 
@@ -71,8 +76,9 @@ def main():
         #"dataset": ["alpaca", "gsm8k"],
         #"quantization": ["int4", "int8", "fp16"],
        # "batch_size": [1, 2, 4],
-       # "model": ["deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "meta-llama/Llama-2-7b-hf", "google/switch-base-8"]
-        "model": ["google/switch-base-8"]
+       # "model": ["deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "meta-llama/Llama-2-7b-hf", "google/switch-base-8", "Intel/bert-base-uncased-sparse-90-unstructured-pruneofa"]
+        "model": ["Intel/bert-base-uncased-sparse-90-unstructured-pruneofa"] 
+       
     }
     
     # Generate test suites for each sweep variable
@@ -145,11 +151,13 @@ def main():
                 try:
                     test_name = f"input{prompt_len}_output{gen_tokens}"
                     is_seq2seq = models[model_name].get("is_seq2seq", False)
+                    is_qa = models[model_name].get("is_qa", False)
                     result = run_experiment(
                         sweep_name, suite['suite_name'], model_name, context_len,
                         tokenizer, model, dataset_name, data, test_name,
                         prompt_len, gen_tokens, batch_size, quantization,
-                        device, writer, carbon_intensity, is_seq2seq=is_seq2seq
+                        device, writer, carbon_intensity, is_seq2seq=is_seq2seq, 
+                        is_qa=is_qa
                     )
 
                 except Exception as e:

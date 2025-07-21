@@ -22,17 +22,35 @@ import torch
 import deepspeed
 
 def is_qa_model(model_name):
-    return "pruneofa" in model_name.lower() or "questionanswering" in model_name.lower()
+    return "pruneofa" in model_name.lower() and "qa" in model_name.lower()
 
 def is_seq2seq_model(model_name):
     return "switch" in model_name.lower()
 
 def load_model(model_name, device, quantization=None, trust_remote_code=False):
+    # tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=trust_remote_code)
+    # tokenizer.pad_token = tokenizer.eos_token
+    # tokenizer.padding_side = "left"
+
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=trust_remote_code)
-    tokenizer.pad_token = tokenizer.eos_token
+
+    if tokenizer.pad_token is None:
+        if tokenizer.eos_token:
+            tokenizer.pad_token = tokenizer.eos_token
+        elif "[PAD]" in tokenizer.get_vocab():
+            tokenizer.pad_token = "[PAD]"
+        else:
+            tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+            model.resize_token_embeddings(len(tokenizer))
+
     tokenizer.padding_side = "left"
 
-    ModelClass = AutoModelForSeq2SeqLM if is_seq2seq_model(model_name) else AutoModelForCausalLM
+    if is_qa_model(model_name):
+        ModelClass = AutoModelForQuestionAnswering
+    elif is_seq2seq_model(model_name):
+        ModelClass = AutoModelForSeq2SeqLM
+    else:
+        ModelClass = AutoModelForCausalLM
 
     # Load model based on quantization
     if quantization is None or quantization == "fp32":
