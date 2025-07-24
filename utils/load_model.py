@@ -17,9 +17,51 @@ Example usage:
     )
 """
 
+# Add this helper class at the top of the file (above is_qa_model)
+
 from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer, BitsAndBytesConfig, AutoModelForQuestionAnswering
 import torch
 import deepspeed
+
+
+# -------------------------------
+# Simulated Activation Quantization
+# -------------------------------
+
+# ADDED THIS FOR QUANTIZATION
+class QuantizedActivationWrapper(torch.nn.Module):
+    def __init__(self, module, bits=8):
+        super().__init__()
+        self.module = module
+        self.bits = bits
+
+    def quantize(self, x):
+        scale = x.abs().max() / (2 ** (self.bits - 1) - 1 + 1e-6)
+        qx = torch.clamp((x / scale).round(), -(2 ** (self.bits - 1)), 2 ** (self.bits - 1) - 1)
+        return qx * scale
+
+    def forward(self, x):
+        x = self.quantize(x)
+        return self.module(x)
+
+# ADDED THIS FOR QUANTIZATION
+def wrap_llama_activation_modules(model, bits):
+    try:
+        layers = model.model.layers
+        for i, layer in enumerate(layers):
+            layer.mlp.gate_proj = QuantizedActivationWrapper(layer.mlp.gate_proj, bits=bits)
+            layer.mlp.up_proj = QuantizedActivationWrapper(layer.mlp.up_proj, bits=bits)
+            layer.mlp.down_proj = QuantizedActivationWrapper(layer.mlp.down_proj, bits=bits)
+            layer.self_attn.q_proj = QuantizedActivationWrapper(layer.self_attn.q_proj, bits=bits)
+            layer.self_attn.k_proj = QuantizedActivationWrapper(layer.self_attn.k_proj, bits=bits)
+            layer.self_attn.v_proj = QuantizedActivationWrapper(layer.self_attn.v_proj, bits=bits)
+            layer.self_attn.o_proj = QuantizedActivationWrapper(layer.self_attn.o_proj, bits=bits)
+        print(f"✅ Wrapped LLaMA activation layers with fake {bits}-bit quantization")
+    except Exception as e:
+        print(f"⚠️  Failed to wrap LLaMA activations: {e}")
+
+
+
 
 def is_qa_model(model_name):
     return "pruneofa" in model_name.lower() and "qa" in model_name.lower()
@@ -31,7 +73,6 @@ def load_model(model_name, device, quantization=None, trust_remote_code=False):
     # tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=trust_remote_code)
     # tokenizer.pad_token = tokenizer.eos_token
     # tokenizer.padding_side = "left"
-
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=trust_remote_code)
 
     if tokenizer.pad_token is None:
@@ -78,6 +119,9 @@ def load_model(model_name, device, quantization=None, trust_remote_code=False):
             quantization_config=bnb_config, device_map={"": device}
         )
 
+        # ADDED THIS FOR QUANTIZATION
+        wrap_llama_activation_modules(model, bits=8)
+
     elif quantization == "int4":
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
@@ -90,8 +134,12 @@ def load_model(model_name, device, quantization=None, trust_remote_code=False):
             quantization_config=bnb_config, device_map={"": device}
         )
 
+        # ADDED THIS FOR QUANTIZATION
+        wrap_llama_activation_modules(model, bits=4)
+
     else:
         raise ValueError(f"Unsupported quantization type: {quantization}")
+        
 
     # ✅ DeepSpeed MoE Inference Wrapping (only for Switch models + float precision)
     if is_seq2seq_model(model_name) and quantization in ["fp32", "fp16", None]:
